@@ -93,7 +93,7 @@ module.exports = async (fastify) => {
     '/webhook-live',
     { config: { rawBody: true } },
     async (request, reply) => {
-      
+
     },
   );
 

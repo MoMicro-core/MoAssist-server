@@ -50,7 +50,7 @@ const openaiPlugin = async (fastify) => {
       model: options.chat.model,
       system,
     });
-  
+
   openaiCollection.api = openai;
   fastify.decorate('openai', openaiCollection);
 
