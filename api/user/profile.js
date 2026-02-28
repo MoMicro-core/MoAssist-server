@@ -99,21 +99,18 @@ module.exports = {
           );
         }
         if (key === 'email' && !user.stripeAccountId) {
-          const { customer, account } =
-            await fastify.stripeManager.createCustomer({
-              country: user.country,
-              uid: user.uid,
-              email: value,
-            });
-          user.stripeAccountId = account.id;
+          const { customer } = await fastify.stripeManager.createCustomer({
+            country: user.country,
+            uid: user.uid,
+            email: value,
+          });
           user.stripeId = customer.id;
-          const { customer: cusLive, account: accLive } =
+          const { customer: cusLive } =
             await fastify.stripeManagerLive.createCustomer({
               country: user.country,
               uid: user.uid,
               email: value,
             });
-          user.stripeLive.stripeAccountId = accLive.id;
           user.stripeLive.stripeId = cusLive.id;
 
           // user.email = value;
@@ -122,105 +119,13 @@ module.exports = {
             {
               $set: {
                 'data.email': value,
-                'data.stripeAccountId': account.id,
                 'data.stripeId': customer.id,
-                'data.stripeLive.stripeAccountId': accLive.id,
                 'data.stripeLive.stripeId': cusLive.id,
-                mode: 'guest',
+                mode: 'all',
               },
             },
           );
-        }
-        if (key === 'payoutInfo') {
-          if (
-            value.cards.filter((c) => c.preferred).length > 1 ||
-            value.ibans.filter((c) => c.preferred).length > 1
-          ) {
-            return {
-              message: 'Only one card or iban can be preferred',
-              statusCode: 400,
-            };
-          }
-          if (value['type'] === 'stripe') {
-            const checkOnBoardingLive =
-              await fastify.stripeManagerLive.checkOnboardingStatus(
-                user.stripeLive.stripeAccountId,
-              );
-            const checkOnBoarding =
-              await fastify.stripeManager.checkOnboardingStatus(
-                user.stripeAccountId,
-              );
-            if (!checkOnBoarding || !checkOnBoardingLive) {
-              const link = await fastify.stripeManager.getOnboardingLink(
-                user.stripeAccountId,
-              );
-              const linkLive =
-                await fastify.stripeManagerLive.getOnboardingLink(
-                  user.stripeLive.stripeAccountId,
-                );
-
-              const emailContent = `
-    <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: auto; background-color: #ffffff; padding: 20px; border-radius: 6px;">
-      <tr>
-        <td>
-          <h2 style="color: #007BFF;">You can not use stripe yet</h2>
-          <p>Hello,</p>
-          <p>You have to finish your onboarding</p>
-
-           ${
-             !checkOnBoarding
-               ? `
-          <a href="${link}"
-             style="display: inline-block; padding: 12px 20px; margin: 20px 0; background-color: #007BFF; color: #ffffff; text-decoration: none; border-radius: 4px; font-weight: bold;">
-            Make it now! in Sandbox
-          </a>
-        `
-               : ''
-           }
-
-        ${
-          !checkOnBoardingLive
-            ? `  <a href="${linkLive}"
-             style="display: inline-block; padding: 12px 20px; margin: 20px 0; background-color: #007BFF; color: #ffffff; text-decoration: none; border-radius: 4px; font-weight: bold;">
-            Make it now! in Live
-          </a>`
-            : ''
-        }
-
-        </td>
-      </tr>
-    </table>
-      `;
-              await fastify.email.sendMail({
-                to: user.email,
-                subject: 'Finish stripe onboarding',
-                text: emailContent,
-              });
-            }
-          }
-        }
-        if (key === 'description') {
-          const translationDescription = await fastify.openai.translate({
-            data: {
-              description: value,
-            },
-            languages: fastify.config.environment.languages.filter(
-              (l) => l !== client.session.language,
-            ),
-          });
-          const descriptions = [];
-          for (const language of translationDescription.languages) {
-            descriptions.push({
-              content: language.translation.description,
-              language: language.name,
-            });
-          }
-          descriptions.push({
-            content: value,
-            language: client.session.language,
-          });
-          user.description = descriptions;
-          continue;
+          client.session.mode = 'all';
         }
         user[key] = value;
       }
@@ -241,40 +146,7 @@ module.exports = {
           fields: {
             type: 'object',
             additionalProperties: true,
-            properties: {
-              payoutInfo: {
-                type: 'object',
-                properties: {
-                  type: { type: 'string', enum: ['stripe', 'card', 'iban'] },
-                  cards: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        cardNumber: { type: 'string' },
-                        email: { type: 'string' },
-                        name: { type: 'string' },
-                        preferred: { type: 'boolean' },
-                      },
-                    },
-                  },
-                  ibans: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        number: { type: 'string' },
-                        email: { type: 'string' },
-                        name: { type: 'string' },
-                        preferred: { type: 'boolean' },
-                        address: { type: 'string' },
-                        bic: { type: 'string' },
-                      },
-                    },
-                  },
-                },
-              },
-            },
+            properties: {},
           },
         },
       },
@@ -337,7 +209,7 @@ module.exports = {
     type: 'post',
     access: ['all'],
     handler: async ({ client, fastify }) => {
-      client.session.mode = client.session.mode === 'guest' ? 'host' : 'guest';
+      client.session.mode = 'all';
       await fastify.mongodb.sessions.findOneAndUpdate(
         { token: client.session.token },
         { $set: { mode: client.session.mode } },
@@ -350,9 +222,9 @@ module.exports = {
     },
     schema: {
       tags: ['User'],
-      summary: 'Toggle guest/host mode',
+      summary: 'Single mode (legacy endpoint)',
       description:
-        'Switches the users session between guest and host modes. Affects available features and API access permissions.',
+        'Legacy endpoint kept for compatibility. Mode switching is removed and all authenticated users use a single mode.',
       body: {
         type: 'object',
         required: ['token'],
@@ -367,7 +239,7 @@ module.exports = {
           properties: {
             mode: {
               type: 'string',
-              example: 'guest',
+              example: 'all',
             },
             message: { type: 'string' },
           },
@@ -384,7 +256,7 @@ module.exports = {
       tags: ['User'],
       summary: 'Get current mode',
       description:
-        'Returns the users current session mode (guest or host). Used to determine available UI features and permissions.',
+        'Returns the users current session mode. Guest/host separation has been removed.',
       body: {
         type: 'object',
         required: ['token'],
@@ -398,7 +270,7 @@ module.exports = {
           properties: {
             mode: {
               type: 'string',
-              example: 'guest',
+              example: 'all',
             },
             message: { type: 'string' },
           },

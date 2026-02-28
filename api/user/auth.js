@@ -31,7 +31,6 @@ module.exports = {
           role: user.role,
           stripeLive: user.stripeLive,
           stripeId: user.stripeId,
-          stripeAccountId: user.stripeAccountId,
           fcmToken,
         },
         socket,
@@ -76,7 +75,7 @@ module.exports = {
     },
   },
 
-  'register/:referralId?': {
+  register: {
     type: 'post',
     access: ['public'],
     handler: async (
@@ -88,122 +87,45 @@ module.exports = {
         .verifyIdToken(firebaseToken);
       const uid = decodedToken.uid;
       const firebaseName = decodedToken.name || '';
-      const { name, lastName, country, timeZone } = userData;
+      const { name, lastName, country } = userData;
       const { phoneNumber, language = 'english', currency } = userData;
-      const { description, languagesSpoken = [] } = userData;
       const user = await fastify.mongodb.user.findOne({ uid });
       if (user) return { message: 'User already exists', statusCode: 500 };
-      const permissions = [];
-      if (decodedToken.email) {
-        const invitions = await fastify.mongodb.invitations.find({
-          invitedEmail: decodedToken.email,
-        });
-        if (invitions) {
-          const invitionsIds = [];
-          for (const invition of invitions) {
-            await fastify.mongodb.listings.findOneAndUpdate(
-              { id: invition.listing },
-              { $push: { managers: uid } },
-            );
-            permissions.push({
-              role: 'co-host',
-              listingId: invition.listing,
-            });
-          }
-          await fastify.mongodb.invitations.deleteMany({
-            id: { $in: invitionsIds },
-          });
-        }
-      }
       let countryCode = country;
       if (!country) {
         countryCode = await fastify.geo.getCountry(request);
       }
-      const descriptions = [];
-      const descriptionText = description || 'Here for your comfort';
-      const translationDescription = await fastify.openai.translate({
-        data: {
-          description: descriptionText,
-        },
-        languages: fastify.config.environment.languages.filter(
-          (l) => l !== (description ? client.session.language : 'english'),
-        ),
-      });
-      descriptions.push({
-        content: descriptionText,
-        language: description ? client.session.language : 'english',
-      });
-      for (const language of translationDescription.languages) {
-        descriptions.push({
-          content: language.translation.description,
-          language: language.name,
-        });
-      }
-      let referralUser = null;
-      if (request?.params?.referralId) {
-        const { referralId } = request.params;
-        if (referralId) {
-          referralUser = await fastify.mongodb.user.findOne({
-            uid: referralId,
-          });
-          if (referralUser) {
-            referralUser.referrals.push(uid);
-            await referralUser.save();
-          }
-        }
-      }
       let stripeId = '';
-      let stripeAccountId = '';
       let stripeIdLive = '';
-      let stripeAccountIdLive = '';
       if (decodedToken.email) {
-        const { customer, account } =
-          await fastify.stripeManager.createCustomer({
-            country: countryCode,
-            uid,
-            email: decodedToken.email,
-          });
+        const { customer } = await fastify.stripeManager.createCustomer({
+          country: countryCode,
+          uid,
+          email: decodedToken.email,
+        });
         stripeId = customer.id;
-        stripeAccountId = account.id;
 
-        const { customer: cusLive, account: accLive } =
+        const { customer: cusLive } =
           await fastify.stripeManagerLive.createCustomer({
             country: countryCode,
             uid,
             email: decodedToken.email,
           });
         stripeIdLive = cusLive.id;
-        stripeAccountIdLive = accLive.id;
       }
       const newUser = await fastify.mongodb.user.create({
-        permissions,
         language,
-        description: descriptions,
         currency,
-        invitedBy: referralUser ? request.params.referralId : '',
         uid,
         email: decodedToken.email || '',
         role: 'user',
         name: name || firebaseName || '',
         lastName: lastName || '',
         country: countryCode || '',
-        stripeAccountId,
         phoneNumber: phoneNumber || '',
-        timezone: timeZone || '',
         stripeId,
         stripeLive: {
-          stripeAccountId: stripeAccountIdLive,
           stripeId: stripeIdLive,
-        },
-        languagesSpoken,
-      });
-      const calendar = await fastify.mongodb.calendars.create({
-        owner: uid,
-        data: {
-          VTIMEZONE: {
-            TZID: timeZone,
-          },
-          VEVENT: [],
         },
       });
       const token = await client.initializeSession({
@@ -218,17 +140,17 @@ module.exports = {
           name: newUser.name + ' ' + newUser.lastName,
           role: newUser.role,
           stripeId,
+          // stripeAccountId,
           stripeLive: {
-            stripeAccountId: stripeAccountIdLive,
+            // stripeAccountId: stripeAccountIdLive,
             stripeId: stripeIdLive,
           },
 
-          stripeAccountId,
           fcmToken,
         },
         socket,
       });
-      return { token, calendar: calendar.id };
+      return { token };
     },
     schema: {
       summary: 'Register new user',

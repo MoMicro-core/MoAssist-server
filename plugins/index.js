@@ -1,7 +1,7 @@
 'use strict';
 
 const path = require('node:path');
-// const geoip = require('geoip-lite');
+const geoip = require('geoip-lite');
 const corsPlugin = require('@fastify/cors');
 const formbodyPlugin = require('@fastify/formbody');
 const fastifyStaticPlugin = require('@fastify/static');
@@ -9,6 +9,41 @@ const mongoPlugin = require('./mongodb.js');
 const firebasePlugin = require('./firebase.js');
 const fastifyRawBody = require('fastify-raw-body');
 const logger = require('./logger.js');
+
+function describeSchemaProperties(schema, { forceRequired = false } = {}) {
+  if (!schema || schema.type !== 'object' || !schema.properties) return [];
+  const required = new Set(schema.required || []);
+  return Object.keys(schema.properties).map((name) => {
+    const isRequired = forceRequired || required.has(name);
+    return `- ${name} (${isRequired ? 'required' : 'optional'})`;
+  });
+}
+
+function buildRequestPropertiesDescription(routeSchema) {
+  if (!routeSchema) return '';
+  const sections = [];
+  const bodyLines = describeSchemaProperties(routeSchema.body);
+  if (bodyLines.length) {
+    sections.push('Request body properties:', ...bodyLines, '');
+  }
+  const queryLines = describeSchemaProperties(routeSchema.querystring);
+  if (queryLines.length) {
+    sections.push('Query parameters:', ...queryLines, '');
+  }
+  const headerLines = describeSchemaProperties(routeSchema.headers);
+  if (headerLines.length) {
+    sections.push('Header parameters:', ...headerLines, '');
+  }
+  const paramsLines = describeSchemaProperties(routeSchema.params, {
+    forceRequired: true,
+  });
+  if (paramsLines.length) {
+    sections.push('Path parameters:', ...paramsLines, '');
+  }
+  if (!sections.length) return '';
+  if (sections[sections.length - 1] === '') sections.pop();
+  return sections.join('\n');
+}
 
 module.exports = async (fastify) => {
   fastify.register(formbodyPlugin);
@@ -46,8 +81,7 @@ module.exports = async (fastify) => {
       transformedSchema.description = base ? `${base}\n\n${extra}` : extra;
       return { schema: transformedSchema, url };
     },
-    swagger: {
-    },
+    swagger: {},
   });
 
   await fastify.register(require('@fastify/swagger-ui'), {
@@ -92,9 +126,7 @@ module.exports = async (fastify) => {
   fastify.post(
     '/webhook-live',
     { config: { rawBody: true } },
-    async (request, reply) => {
-
-    },
+    // async (request, reply) => { },
   );
 
   fastify.get('/ip', async (req) => {

@@ -6,6 +6,14 @@ const crypto = require('node:crypto');
 
 const sessions = new Map();
 
+const normalizeMode = (mode, hasEmail = false) => {
+  if (mode === 'guest' || mode === 'host') return 'all';
+  if (mode === 'all' || mode === 'unregistered' || mode === 'public') {
+    return mode;
+  }
+  return hasEmail ? 'all' : 'unregistered';
+};
+
 class Client extends EventEmitter {
   streams = [];
 
@@ -19,9 +27,18 @@ class Client extends EventEmitter {
     const session = await this.fastify.mongodb.sessions.findOne({ token });
     if (!session) return false;
     this.session = session.data;
-    this.session.mode = session.mode;
+    this.session.mode = normalizeMode(
+      session.mode,
+      Boolean(session.data?.email),
+    );
+    if (this.session.mode !== session.mode) {
+      await this.fastify.mongodb.sessions.updateOne(
+        { token },
+        { $set: { mode: this.session.mode } },
+      );
+    }
     this.session.token = token;
-    if (session.mode === 'unregistered') await this.extractGeo(request);
+    if (this.session.mode === 'unregistered') await this.extractGeo(request);
     if (socket) {
       this.session.stream = false;
       const client = sessions.get(session.data.uid);
@@ -42,18 +59,18 @@ class Client extends EventEmitter {
     if (!request) return false;
     const userCountry = await this.fastify.geo.getCountry(request);
     if (!this.session) this.session = {};
-    const cfg = this.fastify.config;
-    const strategies = [
-      
-      {
-        match: () => true,
-        build: () => ({ language: 'english', currency: 'USD' }),
-      },
-    ];
+    const { countries, environment } = this.fastify.config;
+    const code = String(userCountry || 'US').toUpperCase();
+    const normalizedCode = countries.countryAliases?.[code] || code;
+    const localization =
+      countries.localizationByCountry?.[normalizedCode] || {};
+    const language = environment.languages.includes(localization.language)
+      ? localization.language
+      : 'english';
+    const currency = environment.currencies.includes(localization.currency)
+      ? localization.currency
+      : 'USD';
 
-    const { language, currency } = strategies
-      .find((s) => s.match(userCountry))
-      .build();
     if (!this.session.language) this.session.language = language;
     if (!this.session.currency) this.session.currency = currency;
     return true;
@@ -73,9 +90,18 @@ class Client extends EventEmitter {
     });
     if (restore) {
       this.session = restore.data;
-      this.session.mode = restore.mode;
+      this.session.mode = normalizeMode(
+        restore.mode,
+        Boolean(restore.data?.email),
+      );
+      if (this.session.mode !== restore.mode) {
+        await this.fastify.mongodb.sessions.updateOne(
+          { token: restore.token },
+          { $set: { mode: this.session.mode } },
+        );
+      }
       this.session.token = restore.token;
-      if (restore.mode === 'unregistered') await this.extractGeo(request);
+      if (this.session.mode === 'unregistered') await this.extractGeo(request);
       if (socket) {
         this.session.stream = false;
         const client = sessions.get(restore.uid);
@@ -91,7 +117,7 @@ class Client extends EventEmitter {
     const newSession = await this.fastify.mongodb.sessions.create({
       token,
       uid,
-      mode: data.email ? 'guest' : 'unregistered',
+      mode: data.email ? 'all' : 'unregistered',
       fcmToken: data.fcmToken || '',
       data,
     });
@@ -99,7 +125,7 @@ class Client extends EventEmitter {
     this.session = data;
     this.session.token = token;
     if (!data.email) this.session.mode = 'unregistered';
-    else this.session.mode = 'guest';
+    else this.session.mode = 'all';
     if (socket) {
       const client = sessions.get(uid);
       if (client) {

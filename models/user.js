@@ -1,6 +1,5 @@
 'use strict';
 
-const mongoose = require('mongoose');
 const config = require('../config/environment.js');
 
 module.exports = {
@@ -18,8 +17,6 @@ module.exports = {
     verified: { type: Boolean, default: false },
     referrals: [String], // user ids
     invitedBy: String,
-
-   
 
     stripeId: { type: String, default: '' },
     stripeAccountId: { type: String, default: '' },
@@ -43,7 +40,7 @@ module.exports = {
       type: String,
       trim: true,
     },
-    
+
     language: {
       type: String,
       trim: true,
@@ -55,7 +52,6 @@ module.exports = {
       trim: true,
       default: 'USD',
     },
-    
   },
   params: { timestamps: true },
 };
