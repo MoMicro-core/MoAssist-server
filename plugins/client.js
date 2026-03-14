@@ -1,197 +1,141 @@
 'use strict';
 
-const EventEmitter = require('node:events');
 const fp = require('fastify-plugin');
-const crypto = require('node:crypto');
+const {
+  UnauthorizedError,
+  ForbiddenError,
+} = require('../src/shared/application/errors');
+const {
+  addDays,
+  SESSION_TTL_DAYS,
+} = require('../src/modules/auth/application/auth-service');
 
-const sessions = new Map();
-
-const normalizeMode = (mode, hasEmail = false) => {
-  if (mode === 'guest' || mode === 'host') return 'all';
-  if (mode === 'all' || mode === 'unregistered' || mode === 'public') {
-    return mode;
-  }
-  return hasEmail ? 'all' : 'unregistered';
-};
-
-class Client extends EventEmitter {
-  streams = [];
-
-  constructor(fastify) {
-    super();
-    this.fastify = fastify;
-    this.session = null;
+class Connection {
+  constructor(socket) {
+    this.socket = socket;
+    this.rooms = new Set();
+    this.actorType = 'public';
+    this.principal = null;
   }
 
-  async restoreSession({ token, request = null, socket = null }) {
-    const session = await this.fastify.mongodb.sessions.findOne({ token });
-    if (!session) return false;
-    this.session = session.data;
-    this.session.mode = normalizeMode(
-      session.mode,
-      Boolean(session.data?.email),
-    );
-    if (this.session.mode !== session.mode) {
-      await this.fastify.mongodb.sessions.updateOne(
-        { token },
-        { $set: { mode: this.session.mode } },
-      );
-    }
-    this.session.token = token;
-    if (this.session.mode === 'unregistered') await this.extractGeo(request);
-    if (socket) {
-      this.session.stream = false;
-      const client = sessions.get(session.data.uid);
-      if (client) {
-        client.socket.close();
-        sessions.delete(session.data.uid);
-      }
-      sessions.set(session.data.uid, { ...this.session, socket });
-    }
-    await this.fastify.mongodb.user.updateOne(
-      { uid: this.session.uid },
-      { $set: { lastActive: new Date() } },
-    );
-    return true;
-  }
-
-  async extractGeo(request) {
-    if (!request) return false;
-    const userCountry = await this.fastify.geo.getCountry(request);
-    if (!this.session) this.session = {};
-    const { countries, environment } = this.fastify.config;
-    const code = String(userCountry || 'US').toUpperCase();
-    const normalizedCode = countries.countryAliases?.[code] || code;
-    const localization =
-      countries.localizationByCountry?.[normalizedCode] || {};
-    const language = environment.languages.includes(localization.language)
-      ? localization.language
-      : 'english';
-    const currency = environment.currencies.includes(localization.currency)
-      ? localization.currency
-      : 'USD';
-
-    if (!this.session.language) this.session.language = language;
-    if (!this.session.currency) this.session.currency = currency;
-    return true;
-  }
-
-  async initializeEmptySession(request) {
-    this.session = {};
-    this.session.mode = 'public';
-    await this.extractGeo(request);
-    return true;
-  }
-
-  async initializeSession({ request = null, uid, data = {}, socket = null }) {
-    const restore = await this.fastify.mongodb.sessions.findOne({
-      uid,
-      fcmToken: data.fcmToken,
-    });
-    if (restore) {
-      this.session = restore.data;
-      this.session.mode = normalizeMode(
-        restore.mode,
-        Boolean(restore.data?.email),
-      );
-      if (this.session.mode !== restore.mode) {
-        await this.fastify.mongodb.sessions.updateOne(
-          { token: restore.token },
-          { $set: { mode: this.session.mode } },
-        );
-      }
-      this.session.token = restore.token;
-      if (this.session.mode === 'unregistered') await this.extractGeo(request);
-      if (socket) {
-        this.session.stream = false;
-        const client = sessions.get(restore.uid);
-        if (client) {
-          client.socket.close();
-          sessions.delete(restore.uid);
-        }
-        sessions.set(restore.uid, { ...this.session, socket });
-      }
-      return restore.token;
-    }
-    const token = crypto.randomUUID();
-    const newSession = await this.fastify.mongodb.sessions.create({
-      token,
-      uid,
-      mode: data.email ? 'all' : 'unregistered',
-      fcmToken: data.fcmToken || '',
-      data,
-    });
-    if (!newSession) return false;
-    this.session = data;
-    this.session.token = token;
-    if (!data.email) this.session.mode = 'unregistered';
-    else this.session.mode = 'all';
-    if (socket) {
-      const client = sessions.get(uid);
-      if (client) {
-        client.socket.close();
-        sessions.delete(uid);
-      }
-      sessions.set(uid, { ...this.session, socket });
-    }
-    await this.fastify.mongodb.user.updateOne(
-      { uid: this.session.uid },
-      { $set: { lastActive: new Date() } },
-    );
-    return token;
-  }
-
-  async destroy() {
-    if (!this.session) return;
-    await this.fastify.mongodb.sessions.deleteOne({
-      token: this.session.token,
-    });
-    sessions.delete(this.session.uid);
-    this.emit('close');
-  }
-
-  addStream(stream) {
-    this.streams.push(stream);
-  }
-
-  close() {
-    if (!this.session) return;
-    sessions.delete(this.session.token);
-    for (const stream of this.streams) {
-      stream.close();
-    }
+  send(event, payload) {
+    if (this.socket.readyState !== 1) return;
+    this.socket.send(JSON.stringify({ event, payload }));
   }
 }
 
+class ConnectionManager {
+  constructor() {
+    this.rooms = new Map();
+    this.connections = new Set();
+  }
+
+  createConnection(socket) {
+    const connection = new Connection(socket);
+    this.connections.add(connection);
+    return connection;
+  }
+
+  authenticateUser(connection, session) {
+    connection.actorType = 'user';
+    connection.principal = session;
+    this.subscribe(connection, `user:${session.uid}`);
+  }
+
+  authenticateWidget(connection, widgetSession) {
+    connection.actorType = 'widget';
+    connection.principal = widgetSession;
+    this.subscribe(connection, `widget:${widgetSession.token}`);
+  }
+
+  subscribe(connection, room) {
+    if (!this.rooms.has(room)) this.rooms.set(room, new Set());
+    this.rooms.get(room).add(connection);
+    connection.rooms.add(room);
+  }
+
+  publish(room, event, payload) {
+    const members = this.rooms.get(room);
+    if (!members) return;
+    for (const connection of members) {
+      connection.send(event, payload);
+    }
+  }
+
+  remove(connection) {
+    for (const room of connection.rooms) {
+      const members = this.rooms.get(room);
+      if (!members) continue;
+      members.delete(connection);
+      if (members.size === 0) this.rooms.delete(room);
+    }
+    this.connections.delete(connection);
+  }
+}
+
+const readToken = (request) => {
+  const authorization = request.headers.authorization || '';
+  if (authorization.startsWith('Bearer ')) {
+    return authorization.slice('Bearer '.length).trim();
+  }
+  if (request.headers['x-session-token']) {
+    return String(request.headers['x-session-token']);
+  }
+  if (request.query?.token) return String(request.query.token);
+  if (request.body?.token) return String(request.body.token);
+  return '';
+};
+
 const clientPlugin = async (fastify) => {
-  const session = {};
-  session.createSession = () => new Client(fastify);
-  session.sendMessage = (uid, message) => {
-    const client = sessions.get(uid);
-    if (!client || !client.socket) return;
-    const payload = JSON.stringify(message);
-    client.socket.send(payload);
+  const manager = new ConnectionManager();
+
+  const getAppSession = async (token) => {
+    if (!token) return null;
+    const session = await fastify.mongodb.appSession.findOne({ token }).lean();
+    if (!session) return null;
+    if (new Date(session.expiresAt) < new Date()) {
+      await fastify.mongodb.appSession.deleteOne({ token });
+      return null;
+    }
+
+    await fastify.mongodb.appSession.updateOne(
+      { token },
+      { $set: { expiresAt: addDays(new Date(), SESSION_TTL_DAYS) } },
+    );
+
+    return {
+      token,
+      uid: session.uid,
+      role: session.role,
+      ...session.data,
+    };
   };
-  session.getSession = async (uid) => {
-    const session = sessions.get(uid);
-    const user = await fastify.mongodb.user.findOne({ uid });
-    const email = user.email;
-    if (session) return { sessions, isRestored: false, email };
-    const restoredSessions = await fastify.mongodb.sessions.find({ uid });
-    if (!restoredSessions) return { email };
-    const sessionsData = restoredSessions.map((s) => s.data);
-    return { sessions: sessionsData, email, isRestored: true };
-  };
-  session.toggleStream = (client) => {
-    const uid = client.session.uid;
-    const session = sessions.get(uid);
-    if (!session) return;
-    session.stream = !session.stream;
-    client.session.stream = session.stream;
-    sessions.delete(uid);
-    sessions.set(uid, session);
-  };
-  fastify.decorate('client', session);
+
+  fastify.decorate('client', manager);
+  fastify.decorate('readSessionToken', readToken);
+  fastify.decorate('getAppSession', getAppSession);
+
+  fastify.decorate('authenticateRequest', async (request) => {
+    if (request.appSession) return request.appSession;
+
+    const token = readToken(request);
+    if (!token) throw new UnauthorizedError('Session token is required');
+
+    const session = await getAppSession(token);
+
+    if (!session) throw new UnauthorizedError('Session is invalid or expired');
+
+    request.appSession = session;
+    return session;
+  });
+
+  fastify.decorate('authorizeRoles', (roles) => async (request) => {
+    const session = await fastify.authenticateRequest(request);
+
+    if (!roles.includes(session.role)) {
+      throw new ForbiddenError('This action is not allowed');
+    }
+  });
 };
 
 module.exports = fp(clientPlugin, {

@@ -5,6 +5,13 @@ const init = require('eslint-config-metarhia');
 module.exports = [
   // Extend metarhia config (assumes it's Flat-compatible)
   ...init,
+  {
+    files: ['**/*.js'],
+    rules: {
+      'max-len': 'off',
+      'class-methods-use-this': 'off',
+    },
+  },
 
   // Add Jest environment
   {

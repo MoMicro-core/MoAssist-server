@@ -1,62 +1,52 @@
 'use strict';
 
-const OpenAI = require('openai');
 const fp = require('fastify-plugin');
+const OpenAI = require('openai');
+const { UnauthorizedError } = require('../src/shared/application/errors');
 
-class Chat {
-  constructor({ openai, model, system }) {
-    this.model = model;
-    this.messages = [{ role: 'system', content: system }];
-    this.openai = openai;
+class OpenAIGateway {
+  constructor(config) {
+    this.config = config;
+    this.client = config.enabled ? new OpenAI({ apiKey: config.key }) : null;
   }
 
-  loadChatHistory(history) {
-    this.messages.push({ role: 'user', content: history });
+  assertConfigured() {
+    if (!this.client) {
+      throw new UnauthorizedError('OpenAI is not configured');
+    }
   }
 
-  async textMessage({ text }) {
-    this.messages.push({ role: 'user', content: text });
-    return await this.message();
-  }
-
-  async message() {
-    const res = await this.openai.chat.completions.create({
-      model: this.model,
-      messages: this.messages,
-      temperature: 0.7,
+  async createChatCompletion({ messages, temperature = 0.2 }) {
+    this.assertConfigured();
+    const response = await this.client.chat.completions.create({
+      model: this.config.chat.model,
+      messages,
+      temperature,
     });
-    this.messages.push({
-      role: 'assistant',
-      content: res.choices[0].message.content,
+    return response.choices[0]?.message?.content?.trim() || '';
+  }
+
+  async createEmbedding(input) {
+    this.assertConfigured();
+    const response = await this.client.embeddings.create({
+      model: this.config.embeddings.model,
+      input,
     });
-    return res.choices[0].message.content;
+    return response.data[0].embedding;
+  }
+
+  async createEmbeddings(input) {
+    this.assertConfigured();
+    const response = await this.client.embeddings.create({
+      model: this.config.embeddings.model,
+      input,
+    });
+    return response.data.map((entry) => entry.embedding);
   }
 }
 
 const openaiPlugin = async (fastify) => {
-  fastify.log.info('Initializing OpenAI Plugin');
-  const options = fastify.config.openai;
-
-  if (!options.enabled || !options.chat) {
-    return void fastify.log.info('Skip Initializing OpenAI Plugin');
-  }
-
-  if (fastify.openai) return;
-  const openai = new OpenAI({ apiKey: options.key });
-  const openaiCollection = {};
-  openaiCollection.createChat = ({ system }) =>
-    new Chat({
-      openai,
-      model: options.chat.model,
-      system,
-    });
-
-  openaiCollection.api = openai;
-  fastify.decorate('openai', openaiCollection);
-
-  if (!fastify.openai) {
-    fastify.log.info('Skip Initializing OpenAI Plugin');
-  }
+  fastify.decorate('openai', new OpenAIGateway(fastify.config.openai));
 };
 
 module.exports = fp(openaiPlugin, {

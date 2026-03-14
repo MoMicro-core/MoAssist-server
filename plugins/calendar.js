@@ -132,7 +132,6 @@ const calendarEvent = {
         const summary = vevent.SUMMARY || 'rstays';
 
         const start = new Date(
-          // eslint-disable-next-line max-len
           `${dtStart.slice(0, 4)}-${dtStart.slice(4, 6)}-${dtStart.slice(6, 8)}`,
         );
         const end = new Date(
@@ -190,7 +189,6 @@ const calendarEvent = {
         const summary = vevent.SUMMARY || 'rstays';
 
         const start = new Date(
-          // eslint-disable-next-line max-len
           `${dtStart.slice(0, 4)}-${dtStart.slice(4, 6)}-${dtStart.slice(6, 8)}`,
         );
         const end = new Date(

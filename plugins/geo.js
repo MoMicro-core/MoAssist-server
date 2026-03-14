@@ -3,16 +3,43 @@
 const fp = require('fastify-plugin');
 const geoip = require('geoip-lite');
 
-const getCountry = async (request) => {
-  if (!request) return 'US';
-  const ip = request.ip; // should now be client’s real IP
-  const geo = geoip.lookup(ip);
-  return geo?.country || 'US';
+const DEFAULT_LOCALE = {
+  country: 'US',
+  language: 'english',
+  currency: 'USD',
+};
+
+const getCountry = (request) => {
+  if (!request) return DEFAULT_LOCALE.country;
+  const geo = geoip.lookup(request.ip);
+  return geo?.country || DEFAULT_LOCALE.country;
+};
+
+const normalizeCountry = (fastify, country) => {
+  const code = String(country || DEFAULT_LOCALE.country).toUpperCase();
+  return fastify.config.countries.countryAliases?.[code] || code;
+};
+
+const resolveLocale = (fastify, request, session = null) => {
+  const country = normalizeCountry(fastify, getCountry(request));
+  const localized =
+    fastify.config.countries.localizationByCountry?.[country] || {};
+
+  return {
+    country,
+    language:
+      session?.language || localized.language || DEFAULT_LOCALE.language,
+    currency:
+      session?.currency || localized.currency || DEFAULT_LOCALE.currency,
+  };
 };
 
 const geoPlugin = async (fastify) => {
-  const geo = { getCountry };
-  fastify.decorate('geo', geo);
+  fastify.decorate('geo', {
+    getCountry: (request) => getCountry(request),
+    resolveLocale: (request, session = null) =>
+      resolveLocale(fastify, request, session),
+  });
 };
 
 module.exports = fp(geoPlugin, {

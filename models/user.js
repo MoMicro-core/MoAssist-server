@@ -1,57 +1,34 @@
 'use strict';
 
-const config = require('../config/environment.js');
-
 module.exports = {
   properties: {
-    uid: { type: String, required: true, unique: true },
-    role: { type: String, required: true },
+    uid: { type: String, required: true, trim: true, unique: true },
     email: {
       type: String,
-      default: '',
-      // required: true,
-      // unique: true,
+      required: true,
       trim: true,
+      lowercase: true,
+      unique: true,
     },
-    status: { type: String, default: 'active', enum: ['active', 'blocked'] },
+    role: { type: String, default: 'user', enum: ['user', 'admin'] },
+    name: { type: String, default: '', trim: true },
+    photoUrl: { type: String, default: '' },
     verified: { type: Boolean, default: false },
-    referrals: [String], // user ids
-    invitedBy: String,
-
-    stripeId: { type: String, default: '' },
-    stripeAccountId: { type: String, default: '' },
-    stripeLive: {
-      stripeAccountId: { type: String, default: '' },
-      stripeId: { type: String, default: '' },
-    },
-    name: {
+    status: { type: String, default: 'active', enum: ['active', 'blocked'] },
+    fcmTokens: { type: [String], default: [] },
+    stripeCustomerId: { type: String, default: '' },
+    premiumStatus: {
       type: String,
-      trim: true,
+      default: 'free',
+      enum: ['free', 'active', 'trialing', 'past_due', 'canceled'],
     },
-    lastName: {
-      type: String,
-      trim: true,
-    },
-    country: {
-      type: String,
-      trim: true,
-    },
-    phoneNumber: {
-      type: String,
-      trim: true,
-    },
-
-    language: {
-      type: String,
-      trim: true,
-      default: 'english',
-      enum: config.languages,
-    },
-    currency: {
-      type: String,
-      trim: true,
-      default: 'USD',
-    },
+    premiumPlan: { type: String, default: 'free' },
+    premiumCurrentPeriodEnd: { type: Date, default: null },
   },
   params: { timestamps: true },
+  indexes: [
+    [{ uid: 1 }, { unique: true }],
+    [{ email: 1 }, { unique: true }],
+    [{ stripeCustomerId: 1 }, { sparse: true }],
+  ],
 };

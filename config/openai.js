@@ -1,10 +1,12 @@
 'use strict';
 
 module.exports = {
-  enabled: true,
-  system: ``,
+  enabled: Boolean(process.env.OPENAI_KEY),
+  key: process.env.OPENAI_KEY || '',
   chat: {
-    model: 'gpt-4.1',
+    model: process.env.OPENAI_CHAT_MODEL || 'gpt-4.1-mini',
   },
-  key: process.env['OPENAI_KEY'] || '',
+  embeddings: {
+    model: process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small',
+  },
 };
