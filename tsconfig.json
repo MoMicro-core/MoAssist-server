@@ -5,7 +5,12 @@
     "strict": true,
     "noEmit": true,
     "baseUrl": ".",
-    "preserveWatchOutput": true
+    "preserveWatchOutput": true,
+    "allowJs": true,
+    "checkJs": true
   },
-  "include": ["*.d.ts"]
+  "include": [
+    "src/**/*.js",
+    "src/**/*.d.ts"
+  ]
 }
