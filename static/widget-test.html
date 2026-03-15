@@ -103,6 +103,15 @@
         font-size: 13px;
         color: #94a3b8;
       }
+      .preview {
+        margin-top: 14px;
+        padding: 12px;
+        border-radius: 12px;
+        background: rgba(15, 23, 42, 0.4);
+        border: 1px dashed rgba(148, 163, 184, 0.45);
+        font-size: 13px;
+        color: #cbd5f5;
+      }
       code {
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
           "Courier New", monospace;
@@ -130,6 +139,7 @@
         </div>
 
         <div id="status" class="status">Status: waiting for input.</div>
+        <div id="previewInfo" class="preview">Nothing loaded yet.</div>
         <div class="hint">
           The chatbot must be <strong>published</strong> and allow this origin.
         </div>
@@ -143,6 +153,7 @@
     <script>
       const snippetInput = document.getElementById('snippet');
       const status = document.getElementById('status');
+      const previewInfo = document.getElementById('previewInfo');
       const iframeWrap = document.getElementById('iframeWrap');
       const iframe = document.getElementById('iframe');
       const loadedScripts = new Map();
@@ -155,8 +166,18 @@
         status.textContent = `Status: ${message}`;
       };
 
+      const setPreviewInfo = (message) => {
+        previewInfo.textContent = message;
+      };
+
+      const decodeHtml = (value) => {
+        const helper = document.createElement('textarea');
+        helper.innerHTML = value;
+        return helper.value;
+      };
+
       const parseSnippet = (value) => {
-        const trimmed = value.trim();
+        const trimmed = decodeHtml(value.trim());
         if (!trimmed) return { scriptSrc: '', iframeSrc: '' };
         const parser = new DOMParser();
         const doc = parser.parseFromString(trimmed, 'text/html');
@@ -177,6 +198,7 @@
       const loadScript = (src) => {
         if (loadedScripts.has(src)) {
           setStatus('Widget script already loaded.');
+          setPreviewInfo(`Script already loaded: ${src}`);
           return;
         }
         const script = document.createElement('script');
@@ -184,10 +206,14 @@
         script.async = true;
         script.defer = true;
         script.dataset.widgetTest = 'true';
-        script.onload = () => setStatus('Widget script loaded.');
+        script.onload = () => {
+          setStatus('Widget script loaded.');
+          setPreviewInfo(`Loaded script: ${src}`);
+        };
         script.onerror = () => {
           loadedScripts.delete(src);
           setStatus('Failed to load script. Check chatbot status or origin rules.');
+          setPreviewInfo(`Failed to load script: ${src}`);
         };
         document.body.appendChild(script);
         loadedScripts.set(src, script);
@@ -197,14 +223,21 @@
       const loadIframe = (src) => {
         iframe.src = src;
         iframeWrap.style.display = 'block';
+        setPreviewInfo(`Loaded iframe: ${src}`);
       };
 
       document.getElementById('loadSnippet').addEventListener('click', () => {
         const { scriptSrc, iframeSrc } = parseSnippet(snippetInput.value);
         if (!scriptSrc && !iframeSrc) {
           setStatus('Paste a widget script, iframe tag, or URL.');
+          setPreviewInfo('Nothing loaded.');
           return;
         }
+
+        setPreviewInfo(
+          `Parsed sources: ${scriptSrc ? `script=${scriptSrc}` : 'script=none'}, ` +
+            `${iframeSrc ? `iframe=${iframeSrc}` : 'iframe=none'}.`,
+        );
 
         const statusParts = [];
         if (scriptSrc) {
@@ -226,6 +259,7 @@
         iframe.src = 'about:blank';
         iframeWrap.style.display = 'none';
         setStatus('Cleared loaded widget assets.');
+        setPreviewInfo('Nothing loaded yet.');
       });
     </script>
   </body>

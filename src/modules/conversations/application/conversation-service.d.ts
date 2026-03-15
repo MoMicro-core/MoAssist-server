@@ -48,6 +48,10 @@ export class ConversationService {
     conversation: Conversation;
   }>;
 
+  listAllForActor(
+    actor: Actor,
+    filters?: { status?: 'open' | 'closed'; chatbotId?: string },
+  ): Promise<ConversationView[]>;
   listForActor(actor: Actor, chatbotId: string): Promise<ConversationView[]>;
   getForActor(actor: Actor, conversationId: string): Promise<ConversationView>;
 

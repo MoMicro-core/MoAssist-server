@@ -29,6 +29,13 @@ class ConversationRepository {
       .lean();
   }
 
+  async listByOwner(ownerUid, filters = {}) {
+    return this.model
+      .find({ ownerUid, ...filters })
+      .sort({ updatedAt: -1 })
+      .lean();
+  }
+
   async countByChatbot(chatbotId, filters = {}) {
     return this.model.countDocuments({ chatbotId, ...filters });
   }

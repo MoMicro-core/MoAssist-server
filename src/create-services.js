@@ -80,11 +80,11 @@ const createServices = async (fastify) => {
     ['knowledge', 'infrastructure', 'vector-store'],
     'VectorStore',
   );
-  const embedService = getModuleExport(modules, [
-    'widget',
-    'application',
-    'embed-service',
-  ]);
+  const EmbedService = getModuleExport(
+    modules,
+    ['widget', 'application', 'embed-service'],
+    'EmbedService',
+  );
 
   const userRepository = new UserRepository(fastify.mongodb.user);
   const sessionRepository = new SessionRepository(fastify.mongodb.appSession);
@@ -147,6 +147,8 @@ const createServices = async (fastify) => {
     responderFactory,
     connectionManager: fastify.client,
   });
+
+  const embedService = new EmbedService();
 
   return {
     authService,

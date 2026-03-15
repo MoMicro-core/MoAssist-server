@@ -195,6 +195,27 @@ module.exports = ({ services }) => [
   },
   {
     method: 'GET',
+    url: '/v1/conversations',
+    access: ['user', 'admin'],
+    schema: {
+      tags: ['Conversations'],
+      summary: 'List all conversations for current user',
+      querystring: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', enum: ['open', 'closed'] },
+          chatbotId: { type: 'string' },
+        },
+      },
+    },
+    handler: async (request) =>
+      services.conversationService.listAllForActor(
+        request.appSession,
+        request.query || {},
+      ),
+  },
+  {
+    method: 'GET',
     url: '/v1/conversations/:conversationId',
     access: ['user', 'admin'],
     schema: {

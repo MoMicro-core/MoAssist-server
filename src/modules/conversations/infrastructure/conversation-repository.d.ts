@@ -22,6 +22,10 @@ export class ConversationRepository {
     chatbotId: string,
     filters?: Partial<Pick<Conversation, 'status'>>,
   ): Promise<Conversation[]>;
+  listByOwner(
+    ownerUid: string,
+    filters?: Partial<Pick<Conversation, 'status' | 'chatbotId'>>,
+  ): Promise<Conversation[]>;
   countByChatbot(
     chatbotId: string,
     filters?: Partial<Pick<Conversation, 'status'>>,

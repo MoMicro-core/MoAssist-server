@@ -166,6 +166,17 @@ class ConversationService {
     return conversations.map(mapConversation);
   }
 
+  async listAllForActor(actor, filters = {}) {
+    const normalized = {};
+    if (filters.status) normalized.status = filters.status;
+    if (filters.chatbotId) normalized.chatbotId = filters.chatbotId;
+    const conversations = await this.conversationRepository.listByOwner(
+      actor.uid,
+      normalized,
+    );
+    return conversations.map(mapConversation);
+  }
+
   async getForActor(actor, conversationId) {
     const conversation =
       await this.conversationRepository.findById(conversationId);
