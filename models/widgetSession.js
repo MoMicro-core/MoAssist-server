@@ -13,9 +13,6 @@ module.exports = {
   },
   params: { timestamps: true },
   indexes: [
-    [{ token: 1 }, { unique: true }],
-    [{ conversationId: 1 }],
-    [{ chatbotId: 1 }],
     [{ expiresAt: 1 }, { expireAfterSeconds: 0 }],
   ],
 };

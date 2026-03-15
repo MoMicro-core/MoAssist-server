@@ -31,9 +31,7 @@ module.exports = {
   },
   params: { timestamps: true },
   indexes: [
-    [{ id: 1 }, { unique: true }],
     [{ chatbotId: 1, updatedAt: -1 }],
     [{ ownerUid: 1, updatedAt: -1 }],
-    [{ widgetSessionToken: 1 }],
   ],
 };

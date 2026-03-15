@@ -19,11 +19,20 @@ const corePlugins = [
 ];
 
 module.exports = async (fastify) => {
-  await fastify.register(cors, { origin: true });
+  await fastify.register(cors, {
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      return callback(null, true);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'X-Session-Token'],
+    exposedHeaders: ['X-Session-Token'],
+  });
   await fastify.register(multipart, {
     limits: {
       files: 300,
-      fileSize: 20 * 1024 * 1024,
+      fileSize: 300 * 1024 * 1024,
     },
   });
   await fastify.register(rawBody, {

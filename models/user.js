@@ -26,9 +26,5 @@ module.exports = {
     premiumCurrentPeriodEnd: { type: Date, default: null },
   },
   params: { timestamps: true },
-  indexes: [
-    [{ uid: 1 }, { unique: true }],
-    [{ email: 1 }, { unique: true }],
-    [{ stripeCustomerId: 1 }, { sparse: true }],
-  ],
+  indexes: [[{ stripeCustomerId: 1 }, { sparse: true }]],
 };

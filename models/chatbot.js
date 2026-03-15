@@ -94,5 +94,5 @@ module.exports = {
     },
   },
   params: { timestamps: true },
-  indexes: [[{ id: 1 }, { unique: true }], [{ ownerUid: 1 }]],
+  indexes: [],
 };
