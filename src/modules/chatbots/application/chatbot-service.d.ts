@@ -4,7 +4,6 @@ import type {
   ChatbotSettings,
   ChatbotWithMetrics,
   PublicChatbot,
-  User,
 } from '../../../types';
 import type { ConversationRepository } from '../../conversations/infrastructure/conversation-repository';
 import type { WidgetSessionRepository } from '../../conversations/infrastructure/widget-session-repository';
@@ -34,7 +33,6 @@ export class ChatbotService {
     actor: Actor,
     chatbotId: string,
     patch: { settings?: Partial<ChatbotSettings> } | undefined,
-    owner: User,
   ): Promise<Chatbot>;
   delete(actor: Actor, chatbotId: string): Promise<{ deleted: true }>;
   getPublicWidget(

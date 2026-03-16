@@ -9,7 +9,6 @@ import type {
 import type { ConnectionManager } from '../../../types';
 import type { ChatbotService } from '../../chatbots/application/chatbot-service';
 import type { ChatbotRepository } from '../../chatbots/infrastructure/chatbot-repository';
-import type { UserRepository } from '../../auth/infrastructure/user-repository';
 import type { ConversationRepository } from '../infrastructure/conversation-repository';
 import type { WidgetSessionRepository } from '../infrastructure/widget-session-repository';
 import type { ResponderFactory } from '../domain/responder-factory';
@@ -26,7 +25,6 @@ export class ConversationService {
     chatbotRepository: ChatbotRepository;
     conversationRepository: ConversationRepository;
     widgetSessionRepository: WidgetSessionRepository;
-    userRepository: UserRepository;
     responderFactory: ResponderFactory;
     connectionManager: ConnectionManager;
   });

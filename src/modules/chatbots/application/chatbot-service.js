@@ -11,6 +11,7 @@ const {
   ForbiddenError,
   NotFoundError,
 } = require('../../../shared/application/errors');
+const { hasPremiumAccess } = require('../../../shared/application/premium');
 const { createDefaultChatbotSettings } = require('../domain/default-settings');
 
 const normalizeOrigin = (value = '') => {
@@ -95,7 +96,7 @@ class ChatbotService {
     return chatbot;
   }
 
-  async update(actor, chatbotId, patch = {}, owner) {
+  async update(actor, chatbotId, patch = {}) {
     const document = await this.chatbotRepository.findDocumentById(chatbotId);
     if (!document) throw new NotFoundError('Chatbot not found');
     if (!canManageOwnerResource(actor, document.ownerUid)) {
@@ -104,7 +105,7 @@ class ChatbotService {
 
     if (patch.settings) {
       const merged = deepMerge(document.settings.toObject(), patch.settings);
-      if (merged.ai.enabled && owner.premiumStatus === 'free') {
+      if (merged.ai.enabled && !hasPremiumAccess(document.toObject())) {
         throw new ForbiddenError(
           'Premium subscription is required to enable AI',
         );
@@ -152,6 +153,9 @@ class ChatbotService {
     return {
       id: chatbot.id,
       ownerUid: chatbot.ownerUid,
+      premiumStatus: chatbot.premiumStatus,
+      premiumPlan: chatbot.premiumPlan,
+      premiumCurrentPeriodEnd: chatbot.premiumCurrentPeriodEnd,
       settings: chatbot.settings,
     };
   }

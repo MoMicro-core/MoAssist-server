@@ -12,7 +12,5 @@ module.exports = {
     expiresAt: { type: Date, required: true },
   },
   params: { timestamps: true },
-  indexes: [
-    [{ expiresAt: 1 }, { expireAfterSeconds: 0 }],
-  ],
+  indexes: [[{ expiresAt: 1 }, { expireAfterSeconds: 0 }]],
 };

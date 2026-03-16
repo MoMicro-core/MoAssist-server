@@ -21,7 +21,5 @@ module.exports = {
     vectorsPath: { type: String, required: true },
   },
   params: { timestamps: true },
-  indexes: [
-    [{ chatbotId: 1, updatedAt: -1 }],
-  ],
+  indexes: [[{ chatbotId: 1, updatedAt: -1 }]],
 };

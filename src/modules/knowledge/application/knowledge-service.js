@@ -9,6 +9,7 @@ const {
 const {
   canManageOwnerResource,
 } = require('../../../shared/application/permissions');
+const { hasPremiumAccess } = require('../../../shared/application/premium');
 const { createId } = require('../../../shared/application/ids');
 const { extractTextFromBuffer } = require('../infrastructure/text-extractor');
 
@@ -28,13 +29,13 @@ class KnowledgeService {
     return this.knowledgeFileRepository.listByChatbot(chatbotId);
   }
 
-  async upload(actor, owner, chatbotId, files) {
+  async upload(actor, chatbotId, files) {
     const chatbot = await this.chatbotRepository.findById(chatbotId);
     if (!chatbot) throw new NotFoundError('Chatbot not found');
     if (!canManageOwnerResource(actor, chatbot.ownerUid)) {
       throw new ForbiddenError('Chatbot is not accessible');
     }
-    if (owner.premiumStatus === 'free') {
+    if (!hasPremiumAccess(chatbot)) {
       throw new ForbiddenError(
         'Premium subscription is required to upload files',
       );

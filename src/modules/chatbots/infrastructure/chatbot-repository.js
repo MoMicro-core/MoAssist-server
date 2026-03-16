@@ -29,6 +29,15 @@ class ChatbotRepository {
   async deleteById(id) {
     return this.model.findOneAndDelete({ id }).lean();
   }
+
+  async updateById(id, update) {
+    return this.model
+      .findOneAndUpdate({ id }, update, {
+        new: true,
+        runValidators: true,
+      })
+      .lean();
+  }
 }
 
 module.exports = { ChatbotRepository };

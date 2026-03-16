@@ -4,6 +4,7 @@ module.exports = {
   properties: {
     id: { type: String, required: true, unique: true },
     userUid: { type: String, required: true, index: true },
+    chatbotId: { type: String, required: true, index: true },
     customerId: { type: String, required: true, index: true },
     priceId: { type: String, default: '' },
     status: { type: String, required: true },
@@ -12,7 +13,5 @@ module.exports = {
     raw: { type: Object, default: {} },
   },
   params: { timestamps: true },
-  indexes: [
-    [{ userUid: 1, updatedAt: -1 }],
-  ],
+  indexes: [[{ userUid: 1, updatedAt: -1 }], [{ chatbotId: 1, updatedAt: -1 }]],
 };

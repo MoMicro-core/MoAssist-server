@@ -1,5 +1,7 @@
 'use strict';
 
+const { hasPremiumAccess } = require('../../../shared/application/premium');
+
 class ManualResponder {
   async respond() {
     return null;
@@ -45,8 +47,8 @@ class ResponderFactory {
     this.dependencies = dependencies;
   }
 
-  create(chatbot, owner) {
-    if (chatbot.settings.ai.enabled && owner.premiumStatus !== 'free') {
+  create(chatbot) {
+    if (chatbot.settings.ai.enabled && hasPremiumAccess(chatbot)) {
       return new AiResponder(this.dependencies);
     }
     return new ManualResponder();

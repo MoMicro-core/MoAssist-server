@@ -119,6 +119,10 @@ export interface ChatbotSettings {
 export interface Chatbot {
   id: string;
   ownerUid: string;
+  premiumStatus: PremiumStatus;
+  premiumPlan: string;
+  premiumCurrentPeriodEnd: Date | null;
+  trialUsedAt?: Date | null;
   settings: ChatbotSettings;
   createdAt?: Date;
   updatedAt?: Date;
@@ -135,6 +139,9 @@ export type ChatbotWithMetrics = Chatbot & { metrics: ChatbotMetrics };
 export interface PublicChatbot {
   id: string;
   ownerUid: string;
+  premiumStatus: PremiumStatus;
+  premiumPlan: string;
+  premiumCurrentPeriodEnd: Date | null;
   settings: ChatbotSettings;
 }
 
@@ -208,6 +215,7 @@ export interface KnowledgeFile {
 export interface Subscription {
   id: string;
   userUid: string;
+  chatbotId: string;
   customerId: string;
   priceId: string;
   status: string;
@@ -289,6 +297,7 @@ export interface StripeGateway {
     successUrl: string;
     cancelUrl: string;
     uid: string;
+    chatbotId: string;
   }): Promise<{ id: string; url: string | null }>;
   createPortalSession(args: {
     customerId: string;
@@ -345,6 +354,10 @@ export interface AppSessionCreateInput {
 export interface ChatbotCreateInput {
   id: string;
   ownerUid: string;
+  premiumStatus?: PremiumStatus;
+  premiumPlan?: string;
+  premiumCurrentPeriodEnd?: Date | null;
+  trialUsedAt?: Date | null;
   settings: ChatbotSettings;
 }
 

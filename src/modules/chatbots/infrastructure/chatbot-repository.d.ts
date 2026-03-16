@@ -1,4 +1,4 @@
-import type { HydratedDocument } from 'mongoose';
+import type { HydratedDocument, UpdateQuery } from 'mongoose';
 import type { Chatbot, ChatbotCreateInput, MongooseModel } from '../../../types';
 
 export class ChatbotRepository {
@@ -9,4 +9,5 @@ export class ChatbotRepository {
   listByOwner(ownerUid: string): Promise<Chatbot[]>;
   listAll(): Promise<Chatbot[]>;
   deleteById(id: string): Promise<Chatbot | null>;
+  updateById(id: string, update: UpdateQuery<Chatbot>): Promise<Chatbot | null>;
 }

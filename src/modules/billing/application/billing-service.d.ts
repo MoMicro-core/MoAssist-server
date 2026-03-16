@@ -1,12 +1,12 @@
 import type { Actor, AppConfig, PremiumStatus, StripeGateway, Subscription } from '../../../types';
+import type { ChatbotRepository } from '../../chatbots/infrastructure/chatbot-repository';
 import type { UserRepository } from '../../auth/infrastructure/user-repository';
 import type { SubscriptionRepository } from '../infrastructure/subscription-repository';
-
-export const ACTIVE_STATUSES: ReadonlySet<'active' | 'trialing'>;
 
 export class BillingService {
   constructor(args: {
     userRepository: UserRepository;
+    chatbotRepository: ChatbotRepository;
     subscriptionRepository: SubscriptionRepository;
     stripeGateway: StripeGateway;
     config: AppConfig;
@@ -18,17 +18,34 @@ export class BillingService {
     uid: string;
   }): Promise<string>;
 
-  getSummary(actor: Actor): Promise<{
-    customerId: string;
-    premiumStatus: PremiumStatus;
-    premiumPlan: string;
-    premiumCurrentPeriodEnd: Date | null;
-    subscriptions: Subscription[];
-  }>;
+  getSummary(
+    actor: Actor,
+    payload?: { chatbotId?: string },
+  ): Promise<
+    | {
+        customerId: string;
+        chatbotId: string;
+        premiumStatus: PremiumStatus;
+        premiumPlan: string;
+        premiumCurrentPeriodEnd: Date | null;
+        subscriptions: Subscription[];
+      }
+    | {
+        customerId: string;
+        chatbots: Array<{
+          chatbotId: string;
+          premiumStatus: PremiumStatus;
+          premiumPlan: string;
+          premiumCurrentPeriodEnd: Date | null;
+          subscriptions: Subscription[];
+        }>;
+      }
+  >;
 
   createCheckoutSession(
     actor: Actor,
     payload?: {
+      chatbotId?: string;
       priceId?: string;
       successUrl?: string;
       cancelUrl?: string;
@@ -37,13 +54,23 @@ export class BillingService {
 
   createPortalSession(
     actor: Actor,
-    payload?: { returnUrl?: string },
+    payload?: { chatbotId?: string; returnUrl?: string },
   ): Promise<{ url: string | null }>;
+
+  startTrial(
+    actor: Actor,
+    payload?: { chatbotId?: string; trialDays?: number },
+  ): Promise<{
+    chatbotId: string;
+    premiumStatus: PremiumStatus;
+    premiumPlan: string;
+    premiumCurrentPeriodEnd: Date | null;
+  }>;
 
   handleWebhook(
     rawBody: Buffer | string,
     signature: string,
   ): Promise<{ received: true; ignored?: true }>;
 
-  syncPremiumState(userUid: string): Promise<void>;
+  syncPremiumState(chatbotId: string): Promise<void>;
 }

@@ -8,9 +8,18 @@ module.exports = ({ services }) => [
     schema: {
       tags: ['Billing'],
       summary: 'Read premium subscription summary',
+      querystring: {
+        type: 'object',
+        properties: {
+          chatbotId: { type: 'string' },
+        },
+      },
     },
     handler: async (request) =>
-      services.billingService.getSummary(request.appSession),
+      services.billingService.getSummary(
+        request.appSession,
+        request.query || {},
+      ),
   },
   {
     method: 'POST',
@@ -21,7 +30,9 @@ module.exports = ({ services }) => [
       summary: 'Create a Stripe checkout session',
       body: {
         type: 'object',
+        required: ['chatbotId'],
         properties: {
+          chatbotId: { type: 'string' },
           successUrl: { type: 'string' },
           cancelUrl: { type: 'string' },
           priceId: { type: 'string' },
@@ -44,12 +55,35 @@ module.exports = ({ services }) => [
       body: {
         type: 'object',
         properties: {
+          chatbotId: { type: 'string' },
           returnUrl: { type: 'string' },
         },
       },
     },
     handler: async (request) =>
       services.billingService.createPortalSession(
+        request.appSession,
+        request.body || {},
+      ),
+  },
+  {
+    method: 'POST',
+    url: '/v1/subscription/trial',
+    access: ['user', 'admin'],
+    schema: {
+      tags: ['Billing'],
+      summary: 'Start premium trial for a chatbot',
+      body: {
+        type: 'object',
+        required: ['chatbotId'],
+        properties: {
+          chatbotId: { type: 'string' },
+          trialDays: { type: 'integer', minimum: 1, maximum: 30 },
+        },
+      },
+    },
+    handler: async (request) =>
+      services.billingService.startTrial(
         request.appSession,
         request.body || {},
       ),

@@ -37,7 +37,6 @@ class ConversationService {
     chatbotRepository,
     conversationRepository,
     widgetSessionRepository,
-    userRepository,
     responderFactory,
     connectionManager,
   }) {
@@ -45,7 +44,6 @@ class ConversationService {
     this.chatbotRepository = chatbotRepository;
     this.conversationRepository = conversationRepository;
     this.widgetSessionRepository = widgetSessionRepository;
-    this.userRepository = userRepository;
     this.responderFactory = responderFactory;
     this.connectionManager = connectionManager;
   }
@@ -193,7 +191,6 @@ class ConversationService {
     const chatbot = await this.chatbotRepository.findById(
       conversation.chatbotId,
     );
-    const owner = await this.userRepository.findByUid(chatbot.ownerUid);
     const document = await this.conversationRepository.findDocumentById(
       conversation.id,
     );
@@ -224,7 +221,7 @@ class ConversationService {
 
     queueMicrotask(async () => {
       try {
-        const responder = this.responderFactory.create(chatbot, owner);
+        const responder = this.responderFactory.create(chatbot);
         const answer = await responder.respond({
           chatbot,
           conversation: document.toObject(),

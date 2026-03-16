@@ -1,4 +1,4 @@
-import type { Chatbot, Conversation, User } from '../../../types';
+import type { Chatbot, Conversation } from '../../../types';
 import type { KnowledgeService } from '../../knowledge/application/knowledge-service';
 import type { OpenAIGateway } from '../../../types';
 
@@ -20,5 +20,5 @@ export class ResponderFactory {
     openai: OpenAIGateway;
     knowledgeService: KnowledgeService;
   });
-  create(chatbot: Chatbot, owner: User): ManualResponder | AiResponder;
+  create(chatbot: Chatbot): ManualResponder | AiResponder;
 }

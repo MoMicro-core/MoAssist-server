@@ -20,5 +20,5 @@ npm start
 1. Authenticate with Firebase and exchange the Firebase token for a backend session at `/v1/auth/session`.
 2. Create a chatbot in `/v1/chatbots`.
 3. Publish it and install it with the snippet from `/v1/chatbots/:chatbotId/install`.
-4. Upgrade the user with `/v1/subscription/checkout` to unlock AI and file uploads.
-5. Upload `pdf`, `txt`, or `json` files to `/v1/chatbots/:chatbotId/files`.
+4. Start a chatbot trial with `/v1/subscription/trial` or buy chatbot premium with `/v1/subscription/checkout` (`chatbotId` is required).
+5. Upload `pdf`, `txt`, or `json` files to `/v1/chatbots/:chatbotId/files` (premium/trial chatbot only).

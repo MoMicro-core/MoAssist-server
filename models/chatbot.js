@@ -4,6 +4,14 @@ module.exports = {
   properties: {
     id: { type: String, required: true, unique: true },
     ownerUid: { type: String, required: true, index: true },
+    premiumStatus: {
+      type: String,
+      default: 'free',
+      enum: ['free', 'active', 'trialing', 'past_due', 'canceled'],
+    },
+    premiumPlan: { type: String, default: 'free' },
+    premiumCurrentPeriodEnd: { type: Date, default: null },
+    trialUsedAt: { type: Date, default: null },
     settings: {
       status: {
         type: String,

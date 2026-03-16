@@ -104,6 +104,7 @@ const createServices = async (fastify) => {
 
   const billingService = new BillingService({
     userRepository,
+    chatbotRepository,
     subscriptionRepository,
     stripeGateway: fastify.stripe,
     config: fastify.config,
@@ -143,7 +144,6 @@ const createServices = async (fastify) => {
     chatbotRepository,
     conversationRepository,
     widgetSessionRepository,
-    userRepository,
     responderFactory,
     connectionManager: fastify.client,
   });

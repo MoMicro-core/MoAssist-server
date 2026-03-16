@@ -73,17 +73,12 @@ module.exports = ({ services }) => [
         },
       },
     },
-    handler: async (request) => {
-      const owner = await services.userRepository.findByUid(
-        request.appSession.uid,
-      );
-      return services.chatbotService.update(
+    handler: async (request) =>
+      services.chatbotService.update(
         request.appSession,
         request.params.chatbotId,
         request.body || {},
-        owner,
-      );
-    },
+      ),
   },
   {
     method: 'DELETE',
@@ -153,12 +148,8 @@ module.exports = ({ services }) => [
     },
     handler: async (request) => {
       const files = await collectMultipartFiles(request);
-      const owner = await services.userRepository.findByUid(
-        request.appSession.uid,
-      );
       return services.knowledgeService.upload(
         request.appSession,
-        owner,
         request.params.chatbotId,
         files,
       );

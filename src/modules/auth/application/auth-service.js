@@ -22,9 +22,9 @@ const sanitizeUser = (user) => ({
   name: user.name,
   photoUrl: user.photoUrl,
   verified: user.verified,
-  premiumStatus: user.premiumStatus,
-  premiumPlan: user.premiumPlan,
-  premiumCurrentPeriodEnd: user.premiumCurrentPeriodEnd,
+  premiumStatus: 'free',
+  premiumPlan: 'free',
+  premiumCurrentPeriodEnd: null,
 });
 
 class AuthService {
@@ -79,6 +79,9 @@ class AuthService {
       photoUrl: decoded.picture || existing?.photoUrl || '',
       verified: Boolean(decoded.email_verified),
       stripeCustomerId,
+      premiumStatus: 'free',
+      premiumPlan: 'free',
+      premiumCurrentPeriodEnd: null,
     };
     const sessionDevicePatch = fcmToken
       ? { $addToSet: { fcmTokens: fcmToken } }

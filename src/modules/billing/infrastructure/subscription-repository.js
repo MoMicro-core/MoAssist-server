@@ -5,7 +5,11 @@ class SubscriptionRepository {
     this.model = model;
   }
 
-  async upsertFromStripe(userUid, subscription) {
+  async findById(id) {
+    return this.model.findOne({ id }).lean();
+  }
+
+  async upsertFromStripe(userUid, chatbotId, subscription) {
     const currentPeriodEnd = subscription.current_period_end
       ? new Date(subscription.current_period_end * 1000)
       : null;
@@ -16,6 +20,7 @@ class SubscriptionRepository {
         {
           $set: {
             userUid,
+            chatbotId,
             customerId: subscription.customer,
             priceId: subscription.items?.data?.[0]?.price?.id || '',
             status: subscription.status,
@@ -37,8 +42,16 @@ class SubscriptionRepository {
     return this.model.find({ userUid }).sort({ updatedAt: -1 }).lean();
   }
 
+  async listByChatbot(chatbotId) {
+    return this.model.find({ chatbotId }).sort({ updatedAt: -1 }).lean();
+  }
+
   async deleteByUser(userUid) {
     return this.model.deleteMany({ userUid });
+  }
+
+  async deleteByChatbot(chatbotId) {
+    return this.model.deleteMany({ chatbotId });
   }
 }
 
