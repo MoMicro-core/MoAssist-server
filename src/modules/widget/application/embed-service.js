@@ -6,7 +6,8 @@ const escapeScript = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
 
 class EmbedService {
   renderScript({ chatbot, baseUrl }) {
-    const iframeUrl = `${baseUrl}/chat/iframe/${chatbot.id}`;
+    const language = chatbot.settings.defaultLanguage || 'english';
+    const iframeUrl = `${baseUrl}/chat/iframe/${chatbot.id}?lang=${encodeURIComponent(language)}`;
     const location =
       chatbot.settings.widgetLocation === 'left' ? 'left' : 'right';
     const accent = chatbot.settings.theme.light.accentColor;
@@ -65,7 +66,7 @@ class EmbedService {
     };
 
     return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${chatbot.settings.defaultLanguage || 'english'}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -380,7 +381,8 @@ class EmbedService {
           body: JSON.stringify({
             chatbotId: runtime.chatbot.id,
             token: widgetToken,
-            visitor
+            visitor,
+            language: runtime.chatbot.settings.defaultLanguage || 'english'
           })
         });
         const payload = await response.json();

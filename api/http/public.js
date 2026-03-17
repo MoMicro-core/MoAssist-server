@@ -58,12 +58,19 @@ module.exports = ({ services, fastify }) => [
     schema: {
       tags: ['Public'],
       summary: 'Read public chatbot widget config',
+      querystring: {
+        type: 'object',
+        properties: {
+          lang: { type: 'string' },
+        },
+      },
     },
     handler: async (request) => {
       const origin = request.headers.origin || request.headers.referer || '';
       return services.chatbotService.getPublicWidget(
         request.params.chatbotId,
         origin,
+        request.query?.lang || '',
       );
     },
   },
@@ -81,17 +88,22 @@ module.exports = ({ services, fastify }) => [
           chatbotId: { type: 'string' },
           token: { type: 'string' },
           visitor: { type: 'object' },
+          language: { type: 'string' },
         },
       },
     },
     handler: async (request) => {
       const origin = request.headers.origin || request.headers.referer || '';
+      const viewerLocale = request.viewer.locale || {};
+      const locale = { ...viewerLocale };
+      if (request.body.language) locale.language = request.body.language;
       return services.conversationService.createOrRestoreWidgetSession({
         chatbotId: request.body.chatbotId,
         token: request.body.token,
         visitor: request.body.visitor || {},
+        language: request.body.language || '',
         origin,
-        locale: request.viewer.locale,
+        locale,
       });
     },
   },
@@ -102,12 +114,19 @@ module.exports = ({ services, fastify }) => [
     schema: {
       tags: ['Widget'],
       summary: 'Install script for a chatbot widget',
+      querystring: {
+        type: 'object',
+        properties: {
+          lang: { type: 'string' },
+        },
+      },
     },
     handler: async (request, reply) => {
       const origin = request.headers.origin || request.headers.referer || '';
       const chatbot = await services.chatbotService.getPublicWidget(
         request.params.chatbotId,
         origin,
+        request.query?.lang || '',
       );
       const baseUrl = getBaseUrl(request, fastify.config.environment.appUrl);
       reply.type('application/javascript');
@@ -121,12 +140,19 @@ module.exports = ({ services, fastify }) => [
     schema: {
       tags: ['Widget'],
       summary: 'Iframe widget page',
+      querystring: {
+        type: 'object',
+        properties: {
+          lang: { type: 'string' },
+        },
+      },
     },
     handler: async (request, reply) => {
       const origin = request.headers.origin || request.headers.referer || '';
       const chatbot = await services.chatbotService.getPublicWidget(
         request.params.chatbotId,
         origin,
+        request.query?.lang || '',
       );
       const baseUrl = getBaseUrl(request, fastify.config.environment.appUrl);
       reply.type('text/html');

@@ -122,6 +122,8 @@ const createServices = async (fastify) => {
     conversationRepository,
     widgetSessionRepository,
     knowledgeFileRepository,
+    openai: fastify.openai,
+    countriesConfig: fastify.config.countries,
   });
 
   const knowledgeService = new KnowledgeService({

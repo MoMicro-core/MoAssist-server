@@ -54,6 +54,7 @@ class ConversationService {
     visitor,
     origin,
     locale,
+    language,
   }) {
     if (token) {
       const widgetSession =
@@ -63,19 +64,50 @@ class ConversationService {
           widgetSession.conversationId,
         );
         if (!conversation) throw new NotFoundError('Conversation not found');
+        const preferredLanguage =
+          language || widgetSession.locale?.language || locale?.language || '';
+        const storedLocale = widgetSession.locale || {};
+        const incomingLocale = locale || {};
+        const nextLocale = { ...storedLocale, ...incomingLocale };
+        if (preferredLanguage) nextLocale.language = preferredLanguage;
+
         await this.widgetSessionRepository.updateByToken(token, {
           $set: {
             lastActiveAt: new Date(),
             expiresAt: addDays(new Date(), SESSION_TTL_DAYS),
+            locale: nextLocale,
           },
         });
+
+        if (
+          preferredLanguage &&
+          conversation.locale?.language !== preferredLanguage
+        ) {
+          const conversationDocument =
+            await this.conversationRepository.findDocumentById(conversation.id);
+          if (conversationDocument) {
+            const documentLocale = conversationDocument.locale || {};
+            conversationDocument.locale = {
+              ...documentLocale,
+              language: preferredLanguage,
+            };
+            await conversationDocument.save();
+          }
+        }
+
+        const mappedConversation = mapConversation({
+          ...conversation,
+          locale: nextLocale,
+        });
+
         const chatbot = await this.chatbotService.getPublicWidget(
           chatbotId,
           origin,
+          preferredLanguage,
         );
         return {
           token,
-          conversation: mapConversation(conversation),
+          conversation: mappedConversation,
           chatbot,
         };
       }
@@ -84,6 +116,7 @@ class ConversationService {
     const chatbot = await this.chatbotService.getPublicWidget(
       chatbotId,
       origin,
+      language || locale?.language || '',
     );
     const leadsForm = chatbot.settings.leadsForm || [];
     const visitorData = {};
@@ -96,6 +129,12 @@ class ConversationService {
       if (value) visitorData[field.key] = value;
     }
 
+    const baseLocale = locale || {};
+    const normalizedLocale = { ...baseLocale };
+    if (chatbot.settings.defaultLanguage) {
+      normalizedLocale.language = chatbot.settings.defaultLanguage;
+    }
+
     const widgetToken = createId();
     const conversation = await this.conversationRepository.create({
       id: createId(),
@@ -103,7 +142,7 @@ class ConversationService {
       ownerUid: chatbot.ownerUid,
       widgetSessionToken: widgetToken,
       visitor: visitorData,
-      locale: locale || {},
+      locale: normalizedLocale,
       status: 'open',
       lastMessagePreview: '',
       lastMessageAt: new Date(),
@@ -116,7 +155,7 @@ class ConversationService {
       chatbotId,
       conversationId: conversation.id,
       visitorData,
-      locale: locale || {},
+      locale: normalizedLocale,
       origin,
       lastActiveAt: new Date(),
       expiresAt: addDays(new Date(), SESSION_TTL_DAYS),

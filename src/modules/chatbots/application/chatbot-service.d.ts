@@ -1,8 +1,10 @@
 import type {
   Actor,
+  AppConfig,
   Chatbot,
   ChatbotSettings,
   ChatbotWithMetrics,
+  OpenAIGateway,
   PublicChatbot,
 } from '../../../types';
 import type { ConversationRepository } from '../../conversations/infrastructure/conversation-repository';
@@ -10,10 +12,7 @@ import type { WidgetSessionRepository } from '../../conversations/infrastructure
 import type { KnowledgeFileRepository } from '../../knowledge/infrastructure/knowledge-file-repository';
 import type { ChatbotRepository } from '../infrastructure/chatbot-repository';
 
-export function isAllowedOrigin(
-  domains?: string[],
-  origin?: string,
-): boolean;
+export function isAllowedOrigin(domains?: string[], origin?: string): boolean;
 
 export class ChatbotService {
   constructor(args: {
@@ -21,6 +20,8 @@ export class ChatbotService {
     conversationRepository: ConversationRepository;
     widgetSessionRepository: WidgetSessionRepository;
     knowledgeFileRepository: KnowledgeFileRepository;
+    openai: OpenAIGateway;
+    countriesConfig: AppConfig['countries'];
   });
 
   list(actor: Actor): Promise<ChatbotWithMetrics[]>;
@@ -34,10 +35,44 @@ export class ChatbotService {
     chatbotId: string,
     patch: { settings?: Partial<ChatbotSettings> } | undefined,
   ): Promise<Chatbot>;
+  updateLanguage(
+    actor: Actor,
+    chatbotId: string,
+    language: string,
+    patch?: Partial<{
+      title: string;
+      botName: string;
+      initialMessage: string;
+      inputPlaceholder: string;
+      suggestedMessages: string[];
+      leadsFormTitle: string;
+      leadsFormLabels: string[];
+      aiTemplate: string;
+      aiGuidelines: string;
+    }>,
+  ): Promise<{
+    language: string;
+    translation: {
+      title: string;
+      botName: string;
+      initialMessage: string;
+      inputPlaceholder: string;
+      suggestedMessages: string[];
+      leadsFormTitle: string;
+      leadsFormLabels: string[];
+      aiTemplate: string;
+      aiGuidelines: string;
+    };
+  }>;
+  getLanguageOptions(): {
+    defaultLanguage: string;
+    allowedLanguages: string[];
+  };
   delete(actor: Actor, chatbotId: string): Promise<{ deleted: true }>;
   getPublicWidget(
     chatbotId: string,
     origin?: string,
+    preferredLanguage?: string,
   ): Promise<PublicChatbot>;
   getInstallCode(
     actor: Actor,
@@ -50,7 +85,10 @@ export class ChatbotService {
     scriptSnippet: string;
     iframeSnippet: string;
   }>;
-  getAnalytics(actor: Actor, chatbotId: string): Promise<{
+  getAnalytics(
+    actor: Actor,
+    chatbotId: string,
+  ): Promise<{
     totalConversations: number;
     openConversations: number;
     unreadConversations: number;

@@ -47,6 +47,16 @@ module.exports = ({ services }) => [
   },
   {
     method: 'GET',
+    url: '/v1/chatbots/languages',
+    access: ['user', 'admin'],
+    schema: {
+      tags: ['Chatbots'],
+      summary: 'List allowed chatbot languages',
+    },
+    handler: async () => services.chatbotService.getLanguageOptions(),
+  },
+  {
+    method: 'GET',
     url: '/v1/chatbots/:chatbotId',
     access: ['user', 'admin'],
     schema: {
@@ -77,6 +87,50 @@ module.exports = ({ services }) => [
       services.chatbotService.update(
         request.appSession,
         request.params.chatbotId,
+        request.body || {},
+      ),
+  },
+  {
+    method: 'PATCH',
+    url: '/v1/chatbots/:chatbotId/languages/:language',
+    access: ['user', 'admin'],
+    schema: {
+      tags: ['Chatbots'],
+      summary: 'Update a single chatbot language pack without re-translation',
+      params: {
+        type: 'object',
+        required: ['chatbotId', 'language'],
+        properties: {
+          chatbotId: { type: 'string' },
+          language: { type: 'string' },
+        },
+      },
+      body: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          botName: { type: 'string' },
+          initialMessage: { type: 'string' },
+          inputPlaceholder: { type: 'string' },
+          suggestedMessages: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+          leadsFormTitle: { type: 'string' },
+          leadsFormLabels: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+          aiTemplate: { type: 'string' },
+          aiGuidelines: { type: 'string' },
+        },
+      },
+    },
+    handler: async (request) =>
+      services.chatbotService.updateLanguage(
+        request.appSession,
+        request.params.chatbotId,
+        request.params.language,
         request.body || {},
       ),
   },

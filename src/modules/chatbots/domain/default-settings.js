@@ -6,6 +6,7 @@ const createDefaultChatbotSettings = () => ({
   botName: 'MoMicro Assist',
   initialMessage: 'Hi. How can I help you today?',
   inputPlaceholder: 'Write a message...',
+  defaultLanguage: 'english',
   widgetLocation: 'right',
   rounded: true,
   domains: ['*'],
@@ -53,6 +54,8 @@ const createDefaultChatbotSettings = () => ({
     responseLength: 'medium',
     guidelines: 'Answer clearly, politely and only using available context.',
   },
+  translations: {},
+  translationSourceHash: '',
 });
 
 module.exports = { createDefaultChatbotSettings };

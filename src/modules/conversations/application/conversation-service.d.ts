@@ -35,6 +35,7 @@ export class ConversationService {
     visitor?: Record<string, string>;
     origin?: string;
     locale?: Record<string, unknown>;
+    language?: string;
   }): Promise<{
     token: string;
     conversation: ConversationView;

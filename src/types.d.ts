@@ -91,12 +91,25 @@ export interface ChatbotTheme {
   dark: ChatbotThemeVariant;
 }
 
+export interface ChatbotLanguagePack {
+  title: string;
+  botName: string;
+  initialMessage: string;
+  inputPlaceholder: string;
+  suggestedMessages: string[];
+  leadsFormTitle: string;
+  leadsFormLabels: string[];
+  aiTemplate: string;
+  aiGuidelines: string;
+}
+
 export interface ChatbotSettings {
   status: ChatbotStatus;
   title: string;
   botName: string;
   initialMessage: string;
   inputPlaceholder: string;
+  defaultLanguage: string;
   widgetLocation: WidgetLocation;
   rounded: boolean;
   domains: string[];
@@ -114,6 +127,8 @@ export interface ChatbotSettings {
     responseLength: ResponseLength;
     guidelines: string;
   };
+  translations?: Record<string, ChatbotLanguagePack>;
+  translationSourceHash?: string;
 }
 
 export interface Chatbot {
@@ -257,6 +272,17 @@ export interface AppConfig {
     key: string;
     chat: { model: string };
     embeddings: { model: string };
+  };
+  countries: {
+    europe?: string[];
+    countryAliases?: Record<string, string>;
+    localizationByCountry?: Record<
+      string,
+      {
+        language?: string;
+        currency?: string;
+      }
+    >;
   };
   mongodb: {
     url: string;

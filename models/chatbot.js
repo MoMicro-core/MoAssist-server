@@ -28,6 +28,10 @@ module.exports = {
         type: String,
         default: 'Write a message...',
       },
+      defaultLanguage: {
+        type: String,
+        default: 'english',
+      },
       widgetLocation: {
         type: String,
         default: 'right',
@@ -98,6 +102,14 @@ module.exports = {
           type: String,
           default: 'Answer clearly, politely and only using available context.',
         },
+      },
+      translations: {
+        type: Object,
+        default: {},
+      },
+      translationSourceHash: {
+        type: String,
+        default: '',
       },
     },
   },
