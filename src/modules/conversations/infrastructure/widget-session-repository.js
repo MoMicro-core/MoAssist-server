@@ -14,6 +14,13 @@ class WidgetSessionRepository {
     return this.model.findOne({ token }).lean();
   }
 
+  async findByConversationId(conversationId) {
+    return this.model
+      .findOne({ conversationId })
+      .sort({ updatedAt: -1 })
+      .lean();
+  }
+
   async updateByToken(token, update) {
     return this.model
       .findOneAndUpdate({ token }, update, {

@@ -22,6 +22,28 @@ class ConversationRepository {
     return this.model.findOne({ widgetSessionToken }).lean();
   }
 
+  async findByChatbotAndAuthClient(chatbotId, authClient) {
+    return this.model
+      .findOne({ chatbotId, authClient })
+      .sort({ updatedAt: -1 })
+      .lean();
+  }
+
+  async findDocumentByChatbotAndAuthClient(chatbotId, authClient) {
+    return this.model
+      .findOne({ chatbotId, authClient })
+      .sort({ updatedAt: -1 });
+  }
+
+  async listLifecycleCandidates() {
+    return this.model.find({
+      $or: [
+        { status: { $in: ['open', 'active', 'pending'] } },
+        { authClient: { $exists: true, $ne: '' } },
+      ],
+    });
+  }
+
   async listByChatbot(chatbotId, filters = {}) {
     return this.model
       .find({ chatbotId, ...filters })

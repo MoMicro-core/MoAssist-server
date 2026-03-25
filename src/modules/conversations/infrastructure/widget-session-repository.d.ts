@@ -6,6 +6,7 @@ export class WidgetSessionRepository {
   constructor(model: MongooseModel<WidgetSession>);
   create(data: WidgetSessionCreateInput): Promise<WidgetSession>;
   findByToken(token: string): Promise<WidgetSession | null>;
+  findByConversationId(conversationId: string): Promise<WidgetSession | null>;
   updateByToken(
     token: string,
     update: UpdateQuery<WidgetSession>,

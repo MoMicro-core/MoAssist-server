@@ -173,6 +173,9 @@ const createLanguageHash = (language, content) =>
     .update(`${language}:${JSON.stringify(content)}`)
     .digest('hex');
 
+const DEFAULT_INACTIVITY_HOURS = 3;
+const MAX_INACTIVITY_HOURS = 24;
+
 const validateLanguagePatch = (patch = {}, sourcePack = {}) => {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
     throw new BadRequestError('Language patch must be an object');
@@ -293,6 +296,44 @@ class ChatbotService {
     this.allowedLanguages = collectAllowedLanguages(countriesConfig || {});
   }
 
+  normalizeConversationSettings(settings = {}, strict = true) {
+    if (settings.auth === undefined) {
+      settings.auth = false;
+    } else if (typeof settings.auth !== 'boolean') {
+      if (strict) throw new BadRequestError('auth must be a boolean');
+      settings.auth = settings.auth === true;
+    }
+
+    const inactivityHours = settings.inactivityHours;
+    if (inactivityHours === undefined || inactivityHours === null) {
+      settings.inactivityHours = DEFAULT_INACTIVITY_HOURS;
+      return;
+    }
+
+    if (!Number.isInteger(inactivityHours)) {
+      if (strict) {
+        throw new BadRequestError('inactivityHours must be an integer');
+      }
+      settings.inactivityHours = DEFAULT_INACTIVITY_HOURS;
+      return;
+    }
+
+    if (inactivityHours < 1 || inactivityHours > MAX_INACTIVITY_HOURS) {
+      if (strict) {
+        throw new BadRequestError(
+          `inactivityHours must be between 1 and ${MAX_INACTIVITY_HOURS}`,
+        );
+      }
+      settings.inactivityHours = Math.min(
+        MAX_INACTIVITY_HOURS,
+        Math.max(1, inactivityHours),
+      );
+      return;
+    }
+
+    settings.inactivityHours = inactivityHours;
+  }
+
   normalizeDefaultLanguage(value, strict = true) {
     const language = canonicalizeLanguage(value) || DEFAULT_LANGUAGE;
     if (this.allowedLanguages.includes(language)) return language;
@@ -379,6 +420,7 @@ class ChatbotService {
     settings,
     { forceTranslate = false, translateIfMissing = true } = {},
   ) {
+    this.normalizeConversationSettings(settings);
     const defaultLanguage = this.normalizeDefaultLanguage(
       settings.defaultLanguage,
     );
@@ -413,6 +455,7 @@ class ChatbotService {
 
   buildPublicSettings(rawSettings = {}, preferredLanguage = '') {
     const settings = deepMerge(createDefaultChatbotSettings(), rawSettings);
+    this.normalizeConversationSettings(settings, false);
     const fallbackLanguage = this.normalizeDefaultLanguage(
       settings.defaultLanguage,
       false,
@@ -648,19 +691,38 @@ class ChatbotService {
 
   async getAnalytics(actor, chatbotId) {
     await this.getForActor(actor, chatbotId);
-    const [totalConversations, openConversations, unreadConversations, totals] =
-      await Promise.all([
-        this.conversationRepository.countByChatbot(chatbotId),
-        this.conversationRepository.countByChatbot(chatbotId, {
-          status: 'open',
-        }),
-        this.conversationRepository.countUnreadByChatbot(chatbotId),
-        this.conversationRepository.aggregateTotals(chatbotId),
-      ]);
+    const [
+      totalConversations,
+      openConversations,
+      unreadConversations,
+      totals,
+      activeConversations,
+      pendingConversations,
+      closedConversations,
+    ] = await Promise.all([
+      this.conversationRepository.countByChatbot(chatbotId),
+      this.conversationRepository.countByChatbot(chatbotId, {
+        status: { $in: ['open', 'active', 'pending'] },
+      }),
+      this.conversationRepository.countUnreadByChatbot(chatbotId),
+      this.conversationRepository.aggregateTotals(chatbotId),
+      this.conversationRepository.countByChatbot(chatbotId, {
+        status: { $in: ['open', 'active'] },
+      }),
+      this.conversationRepository.countByChatbot(chatbotId, {
+        status: 'pending',
+      }),
+      this.conversationRepository.countByChatbot(chatbotId, {
+        status: 'closed',
+      }),
+    ]);
 
     return {
       totalConversations,
       openConversations,
+      activeConversations,
+      pendingConversations,
+      closedConversations,
       unreadConversations,
       totalMessages: totals.totalMessages,
       totalLeads: totals.totalLeads,

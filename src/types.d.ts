@@ -12,8 +12,9 @@ export type PremiumStatus =
 export type ChatbotStatus = 'draft' | 'published';
 export type WidgetLocation = 'left' | 'right';
 export type ResponseLength = 'short' | 'medium' | 'long';
-export type ConversationStatus = 'open' | 'closed';
+export type ConversationStatus = 'active' | 'pending' | 'closed';
 export type ChatAuthorType = 'visitor' | 'owner' | 'assistant';
+export type ChatMessageAuthor = 'human' | 'ai';
 export type KnowledgeFileStatus = 'processing' | 'ready' | 'failed';
 export type ChatMessageRole = 'system' | 'user' | 'assistant';
 
@@ -109,6 +110,8 @@ export interface ChatbotSettings {
   botName: string;
   initialMessage: string;
   inputPlaceholder: string;
+  auth: boolean;
+  inactivityHours: number;
   defaultLanguage: string;
   widgetLocation: WidgetLocation;
   rounded: boolean;
@@ -163,9 +166,12 @@ export interface PublicChatbot {
 export interface ConversationMessage {
   id: string;
   authorType: ChatAuthorType;
+  author: ChatMessageAuthor;
   content: string;
   createdAt: Date;
+  read: boolean;
   readByOwner: boolean;
+  readByVisitor: boolean;
 }
 
 export interface Conversation {
@@ -173,11 +179,13 @@ export interface Conversation {
   chatbotId: string;
   ownerUid: string;
   widgetSessionToken: string;
+  authClient: string;
   status: ConversationStatus;
   visitor: Record<string, string>;
   locale: Record<string, unknown>;
   lastMessagePreview: string;
   lastMessageAt: Date | null;
+  lastVisitorMessageAt: Date | null;
   unreadForOwner: number;
   messages: ConversationMessage[];
   createdAt?: Date;
@@ -187,11 +195,13 @@ export interface Conversation {
 export interface ConversationView {
   id: string;
   chatbotId: string;
+  authClient: string;
   status: ConversationStatus;
   visitor: Record<string, string>;
   locale: Record<string, unknown>;
   lastMessagePreview: string;
   lastMessageAt: Date | null;
+  lastVisitorMessageAt: Date | null;
   unreadForOwner: number;
   messages: ConversationMessage[];
 }
@@ -200,6 +210,7 @@ export interface WidgetSession {
   token: string;
   chatbotId: string;
   conversationId: string;
+  authClient: string;
   visitorData: Record<string, string>;
   locale: Record<string, unknown>;
   origin: string;
@@ -392,11 +403,13 @@ export interface ConversationCreateInput {
   chatbotId: string;
   ownerUid: string;
   widgetSessionToken: string;
+  authClient: string;
   status: ConversationStatus;
   visitor: Record<string, string>;
   locale: Record<string, unknown>;
   lastMessagePreview: string;
   lastMessageAt: Date | null;
+  lastVisitorMessageAt: Date | null;
   unreadForOwner: number;
   messages: ConversationMessage[];
 }
@@ -405,6 +418,7 @@ export interface WidgetSessionCreateInput {
   token: string;
   chatbotId: string;
   conversationId: string;
+  authClient: string;
   visitorData: Record<string, string>;
   locale: Record<string, unknown>;
   origin: string;

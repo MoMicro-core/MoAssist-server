@@ -91,6 +91,9 @@ export class ChatbotService {
   ): Promise<{
     totalConversations: number;
     openConversations: number;
+    activeConversations: number;
+    pendingConversations: number;
+    closedConversations: number;
     unreadConversations: number;
     totalMessages: number;
     totalLeads: number;

@@ -62,6 +62,7 @@ module.exports = ({ services, fastify }) => [
         type: 'object',
         properties: {
           lang: { type: 'string' },
+          authClient: { type: 'string' },
         },
       },
     },
@@ -89,6 +90,7 @@ module.exports = ({ services, fastify }) => [
           token: { type: 'string' },
           visitor: { type: 'object' },
           language: { type: 'string' },
+          authClient: { type: 'string' },
         },
       },
     },
@@ -102,6 +104,7 @@ module.exports = ({ services, fastify }) => [
         token: request.body.token,
         visitor: request.body.visitor || {},
         language: request.body.language || '',
+        authClient: request.body.authClient || '',
         origin,
         locale,
       });
@@ -118,6 +121,7 @@ module.exports = ({ services, fastify }) => [
         type: 'object',
         properties: {
           lang: { type: 'string' },
+          authClient: { type: 'string' },
         },
       },
     },
@@ -144,6 +148,7 @@ module.exports = ({ services, fastify }) => [
         type: 'object',
         properties: {
           lang: { type: 'string' },
+          authClient: { type: 'string' },
         },
       },
     },
@@ -156,7 +161,11 @@ module.exports = ({ services, fastify }) => [
       );
       const baseUrl = getBaseUrl(request, fastify.config.environment.appUrl);
       reply.type('text/html');
-      return services.embedService.renderIframe({ chatbot, baseUrl });
+      return services.embedService.renderIframe({
+        chatbot,
+        baseUrl,
+        authClient: request.query?.authClient || '',
+      });
     },
   },
 ];

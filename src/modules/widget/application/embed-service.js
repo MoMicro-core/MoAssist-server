@@ -7,7 +7,7 @@ const escapeScript = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
 class EmbedService {
   renderScript({ chatbot, baseUrl }) {
     const language = chatbot.settings.defaultLanguage || 'english';
-    const iframeUrl = `${baseUrl}/chat/iframe/${chatbot.id}?lang=${encodeURIComponent(language)}`;
+    const iframeBaseUrl = `${baseUrl}/chat/iframe/${chatbot.id}?lang=${encodeURIComponent(language)}`;
     const location =
       chatbot.settings.widgetLocation === 'left' ? 'left' : 'right';
     const accent = chatbot.settings.theme.light.accentColor;
@@ -17,6 +17,18 @@ class EmbedService {
 (function () {
   var existing = document.getElementById('momicro-assist-${chatbot.id}');
   if (existing) return;
+  var globalConfig = window.MOMICRO_ASSIST_CONFIG;
+  var widgetConfig =
+    globalConfig && typeof globalConfig === 'object'
+      ? globalConfig[${escapeScript(chatbot.id)}] || globalConfig
+      : null;
+  var authClient =
+    widgetConfig && typeof widgetConfig.authClient === 'string'
+      ? widgetConfig.authClient
+      : '';
+  var iframeSrc =
+    ${escapeScript(iframeBaseUrl)} +
+    (authClient ? '&authClient=' + encodeURIComponent(authClient) : '');
   var wrapper = document.createElement('div');
   wrapper.id = 'momicro-assist-${chatbot.id}';
   wrapper.style.position = 'fixed';
@@ -35,7 +47,7 @@ class EmbedService {
   button.style.cursor = 'pointer';
   button.style.boxShadow = '0 16px 36px rgba(15, 23, 42, 0.18)';
   var iframe = document.createElement('iframe');
-  iframe.src = ${escapeScript(iframeUrl)};
+  iframe.src = iframeSrc;
   iframe.title = ${escapeScript(chatbot.settings.botName)};
   iframe.style.width = '420px';
   iframe.style.maxWidth = 'calc(100vw - 32px)';
@@ -57,12 +69,13 @@ class EmbedService {
 `.trim();
   }
 
-  renderIframe({ chatbot, baseUrl }) {
+  renderIframe({ chatbot, baseUrl, authClient = '' }) {
     const websocketUrl = `${toWebsocketUrl(baseUrl)}/ws`;
     const payload = {
       chatbot,
       apiBaseUrl: baseUrl,
       websocketUrl,
+      authClient,
     };
 
     return `<!DOCTYPE html>
@@ -84,7 +97,7 @@ class EmbedService {
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      background: radial-gradient(circle at top, rgba(20,184,166,0.18), transparent 30%), var(--bg);
+      background: radial-gradient(circle at top, rgba(9,154,217,0.18), transparent 34%), var(--bg);
       font-family: ui-sans-serif, system-ui, sans-serif;
       color: var(--text);
     }
@@ -97,10 +110,43 @@ class EmbedService {
     .header {
       padding: 18px 18px 12px;
       border-bottom: 1px solid var(--border);
-      background: linear-gradient(135deg, rgba(20,184,166,0.16), rgba(255,255,255,0));
+      background: linear-gradient(135deg, rgba(9,154,217,0.16), rgba(92,215,211,0.04), rgba(255,255,255,0));
+    }
+    .header-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
     }
     .title { margin: 0; font-size: 16px; font-weight: 700; }
     .subtitle { margin: 6px 0 0; font-size: 12px; opacity: 0.7; }
+    .meta {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      padding: 5px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .end-chat {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: transparent;
+      color: inherit;
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
     .messages {
       padding: 16px;
       overflow-y: auto;
@@ -137,6 +183,9 @@ class EmbedService {
       border-top: 1px solid var(--border);
       background: var(--surface);
     }
+    .composer.locked {
+      opacity: 0.7;
+    }
     .suggestions {
       display: flex;
       gap: 8px;
@@ -168,6 +217,11 @@ class EmbedService {
       background: transparent;
       color: inherit;
       font: inherit;
+    }
+    textarea:disabled,
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.65;
     }
     button.send {
       border: 0;
@@ -258,11 +312,19 @@ class EmbedService {
 <body>
   <div class="shell">
     <header class="header">
-      <h1 class="title">${chatbot.settings.botName}</h1>
-      <p class="subtitle">${chatbot.settings.initialMessage}</p>
+      <div class="header-row">
+        <div>
+          <h1 class="title">${chatbot.settings.botName}</h1>
+          <p class="subtitle">${chatbot.settings.initialMessage}</p>
+        </div>
+        <div class="meta">
+          <span id="statusBadge" class="status-badge">Active</span>
+          <button id="endChat" class="end-chat" type="button">End Chat</button>
+        </div>
+      </div>
     </header>
     <main id="messages" class="messages"></main>
-    <footer class="composer">
+    <footer id="composer" class="composer">
       <div id="suggestions" class="suggestions"></div>
       <div class="row">
         <textarea id="input" placeholder="${chatbot.settings.inputPlaceholder}"></textarea>
@@ -295,9 +357,21 @@ class EmbedService {
       const leadForm = document.getElementById('leadForm');
       const submitLead = document.getElementById('submitLead');
       const cancelLead = document.getElementById('cancelLead');
+      const endChat = document.getElementById('endChat');
+      const statusBadge = document.getElementById('statusBadge');
+      const composer = document.getElementById('composer');
+      const defaultPlaceholder =
+        runtime.chatbot.settings.inputPlaceholder || 'Write a message...';
       let socket = null;
       let widgetToken = localStorage.getItem(storageKey) || '';
       let queuedMessage = '';
+      let currentConversation = null;
+
+      const statusLabels = {
+        active: 'Active',
+        pending: 'Pending',
+        closed: 'Closed',
+      };
 
       const addMessage = (authorType, content) => {
         const node = document.createElement('div');
@@ -305,6 +379,59 @@ class EmbedService {
         node.textContent = content;
         messages.appendChild(node);
         messages.scrollTop = messages.scrollHeight;
+      };
+
+      const renderConversation = (conversation) => {
+        messages.innerHTML = '';
+        currentConversation = conversation;
+        (conversation.messages || []).forEach((message) => {
+          addMessage(message.authorType, message.content);
+        });
+        if (!conversation.messages || !conversation.messages.length) {
+          addMessage('system', runtime.chatbot.settings.initialMessage);
+        }
+        applyConversationState(conversation);
+      };
+
+      const applyComposerState = (disabled, placeholder) => {
+        input.disabled = disabled;
+        send.disabled = disabled;
+        input.placeholder = placeholder || defaultPlaceholder;
+        composer.classList.toggle('locked', disabled);
+        suggestions
+          .querySelectorAll('button')
+          .forEach((button) => {
+            button.disabled = disabled;
+          });
+      };
+
+      const applyConversationState = (conversation) => {
+        currentConversation = conversation;
+        const status = conversation?.status || 'active';
+        statusBadge.textContent = statusLabels[status] || 'Active';
+        const hideEndChat =
+          runtime.chatbot.settings.auth ||
+          !conversation ||
+          conversation.status === 'closed';
+        endChat.hidden = hideEndChat;
+
+        if (status === 'closed') {
+          applyComposerState(true, 'This chat is closed');
+          if (!runtime.chatbot.settings.auth) {
+            localStorage.removeItem(storageKey);
+          }
+          return;
+        }
+
+        applyComposerState(false, defaultPlaceholder);
+      };
+
+      const queueVisitorRead = () => {
+        if (!socket || socket.readyState !== WebSocket.OPEN) return;
+        socket.send(JSON.stringify({
+          action: 'widget.read',
+          payload: {}
+        }));
       };
 
       const renderSuggestions = () => {
@@ -338,35 +465,84 @@ class EmbedService {
         });
       };
 
+      const handleSocketError = async (packet) => {
+        const message = packet?.payload?.message || 'Widget request failed';
+        const code = packet?.payload?.code || '';
+
+        if (runtime.chatbot.settings.auth && (code === 'forbidden' || code === 'bad_request' || code === 'not_found')) {
+          localStorage.removeItem(storageKey);
+          widgetToken = '';
+          currentConversation = null;
+          if (socket) socket.close();
+          socket = null;
+          if (runtime.authClient) {
+            try {
+              await createSession();
+              return;
+            } catch (error) {
+              alert(error.message);
+              return;
+            }
+          }
+        }
+
+        alert(message);
+      };
+
       const connectSocket = () => {
         if (!widgetToken) return;
-        if (socket && socket.readyState === WebSocket.OPEN) return;
+        if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+          return;
+        }
+
         socket = new WebSocket(runtime.websocketUrl);
         socket.addEventListener('open', () => {
           socket.send(JSON.stringify({
             action: 'widget.authenticate',
-            payload: { token: widgetToken }
+            payload: {
+              token: widgetToken,
+              authClient: runtime.authClient || ''
+            }
           }));
         });
-        socket.addEventListener('message', (event) => {
+        socket.addEventListener('message', async (event) => {
           const packet = JSON.parse(event.data);
+
           if (packet.event === 'authenticated') {
-            messages.innerHTML = '';
-            packet.payload.conversation.messages.forEach((message) => {
-              addMessage(message.authorType, message.content);
-            });
-            if (!packet.payload.conversation.messages.length) {
-              addMessage('system', runtime.chatbot.settings.initialMessage);
-            }
+            renderConversation(packet.payload.conversation);
+            queueVisitorRead();
             if (queuedMessage) {
               const text = queuedMessage;
               queuedMessage = '';
               sendWidgetMessage(text);
             }
+            return;
           }
+
           if (packet.event === 'message.created') {
-            addMessage(packet.payload.message.authorType, packet.payload.message.content);
+            const message = packet.payload.message;
+            if (currentConversation) {
+              currentConversation.messages = currentConversation.messages || [];
+              currentConversation.messages.push(message);
+            }
+            addMessage(message.authorType, message.content);
+            if (message.authorType !== 'visitor') queueVisitorRead();
+            return;
           }
+
+          if (packet.event === 'conversation.updated' || packet.event === 'conversation.closed') {
+            if (packet.payload?.conversation) {
+              applyConversationState(packet.payload.conversation);
+            }
+            return;
+          }
+
+          if (packet.event === 'error') {
+            await handleSocketError(packet);
+          }
+        });
+        socket.addEventListener('close', () => {
+          socket = null;
         });
       };
 
@@ -382,7 +558,8 @@ class EmbedService {
             chatbotId: runtime.chatbot.id,
             token: widgetToken,
             visitor,
-            language: runtime.chatbot.settings.defaultLanguage || 'english'
+            language: runtime.chatbot.settings.defaultLanguage || 'english',
+            authClient: runtime.authClient || ''
           })
         });
         const payload = await response.json();
@@ -405,21 +582,47 @@ class EmbedService {
       const dispatchMessage = async () => {
         const text = input.value.trim();
         if (!text) return;
+        if (currentConversation && currentConversation.status === 'closed') return;
+
+        if (runtime.chatbot.settings.auth && !runtime.authClient) {
+          alert('authClient is required for this chatbot');
+          return;
+        }
+
         if (!widgetToken) {
           queuedMessage = text;
+          if (runtime.chatbot.settings.auth) {
+            try {
+              await createSession();
+            } catch (error) {
+              alert(error.message);
+            }
+            return;
+          }
+
           overlay.style.display = 'flex';
           return;
         }
+
         if (!socket || socket.readyState !== WebSocket.OPEN) {
           queuedMessage = text;
           connectSocket();
           return;
         }
+
         sendWidgetMessage(text);
       };
 
       renderLeadForm();
       renderSuggestions();
+      endChat.addEventListener('click', () => {
+        if (!socket || socket.readyState !== WebSocket.OPEN) return;
+        if (!currentConversation || currentConversation.status === 'closed') return;
+        socket.send(JSON.stringify({
+          action: 'widget.close',
+          payload: {}
+        }));
+      });
       send.addEventListener('click', dispatchMessage);
       input.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
@@ -438,8 +641,19 @@ class EmbedService {
         overlay.style.display = 'none';
         queuedMessage = '';
       });
-      if (widgetToken) connectSocket();
-      if (!widgetToken) addMessage('system', runtime.chatbot.settings.initialMessage);
+
+      if (widgetToken) {
+        connectSocket();
+      } else if (runtime.chatbot.settings.auth && runtime.authClient) {
+        createSession().catch((error) => {
+          alert(error.message);
+          addMessage('system', runtime.chatbot.settings.initialMessage);
+          applyComposerState(false, defaultPlaceholder);
+        });
+      } else {
+        addMessage('system', runtime.chatbot.settings.initialMessage);
+        applyComposerState(false, defaultPlaceholder);
+      }
     })();
   </script>
 </body>

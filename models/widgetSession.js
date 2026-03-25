@@ -5,6 +5,7 @@ module.exports = {
     token: { type: String, required: true, unique: true },
     chatbotId: { type: String, required: true, index: true },
     conversationId: { type: String, required: true, index: true },
+    authClient: { type: String, default: '', index: true },
     visitorData: { type: Object, default: {} },
     locale: { type: Object, default: {} },
     origin: { type: String, default: '' },

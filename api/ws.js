@@ -21,7 +21,10 @@ module.exports = ({ services, fastify }) => ({
     access: ['public'],
     handler: async ({ connection, payload }) => {
       const { widgetSession, conversation } =
-        await services.conversationService.authenticateWidget(payload.token);
+        await services.conversationService.authenticateWidget(
+          payload.token,
+          payload.authClient || '',
+        );
       fastify.client.authenticateWidget(connection, widgetSession);
       fastify.client.subscribe(connection, `conversation:${conversation.id}`);
       return {
@@ -65,10 +68,36 @@ module.exports = ({ services, fastify }) => ({
     handler: async ({ connection, payload }) => {
       const result = await services.conversationService.sendVisitorMessage({
         widgetToken: connection.principal.token,
+        authClient: connection.principal.authClient || '',
         content: payload.content,
       });
       return {
         event: 'message.accepted',
+        payload: result,
+      };
+    },
+  },
+  'widget.read': {
+    access: ['widget'],
+    handler: async ({ connection }) => {
+      const result = await services.conversationService.markReadByWidget(
+        connection.principal.token,
+      );
+      return {
+        event: 'conversation.read',
+        payload: result,
+      };
+    },
+  },
+  'widget.close': {
+    access: ['widget'],
+    handler: async ({ connection }) => {
+      const result = await services.conversationService.closeForWidget(
+        connection.principal.token,
+        connection.principal.authClient || '',
+      );
+      return {
+        event: 'conversation.closed',
         payload: result,
       };
     },
@@ -83,6 +112,19 @@ module.exports = ({ services, fastify }) => ({
       );
       return {
         event: 'message.accepted',
+        payload: result,
+      };
+    },
+  },
+  'conversation.close': {
+    access: ['user', 'admin'],
+    handler: async ({ connection, payload }) => {
+      const result = await services.conversationService.closeForActor(
+        connection.principal,
+        payload.conversationId,
+      );
+      return {
+        event: 'conversation.closed',
         payload: result,
       };
     },

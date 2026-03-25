@@ -36,26 +36,28 @@ export class ConversationService {
     origin?: string;
     locale?: Record<string, unknown>;
     language?: string;
+    authClient?: string;
   }): Promise<{
     token: string;
     conversation: ConversationView;
     chatbot: PublicChatbot;
   }>;
 
-  authenticateWidget(token: string): Promise<{
+  authenticateWidget(token: string, authClient?: string): Promise<{
     widgetSession: WidgetSession;
-    conversation: Conversation;
+    conversation: ConversationView;
   }>;
 
   listAllForActor(
     actor: Actor,
-    filters?: { status?: 'open' | 'closed'; chatbotId?: string },
+    filters?: { status?: 'active' | 'pending' | 'closed'; chatbotId?: string },
   ): Promise<ConversationView[]>;
   listForActor(actor: Actor, chatbotId: string): Promise<ConversationView[]>;
   getForActor(actor: Actor, conversationId: string): Promise<ConversationView>;
 
   sendVisitorMessage(args: {
     widgetToken: string;
+    authClient?: string;
     content: string;
   }): Promise<MessageCreatedPayload>;
 
@@ -65,5 +67,14 @@ export class ConversationService {
     content: string,
   ): Promise<MessageCreatedPayload>;
 
+  closeForWidget(
+    widgetToken: string,
+    authClient?: string,
+  ): Promise<{ closed: true; conversation: ConversationView }>;
+  closeForActor(
+    actor: Actor,
+    conversationId: string,
+  ): Promise<{ closed: true; conversation: ConversationView }>;
   markRead(actor: Actor, conversationId: string): Promise<{ read: true }>;
+  markReadByWidget(widgetToken: string): Promise<{ read: true }>;
 }

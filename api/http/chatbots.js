@@ -248,7 +248,10 @@ module.exports = ({ services }) => [
       querystring: {
         type: 'object',
         properties: {
-          status: { type: 'string', enum: ['open', 'closed'] },
+          status: {
+            type: 'string',
+            enum: ['active', 'pending', 'closed'],
+          },
           chatbotId: { type: 'string' },
         },
       },
@@ -293,6 +296,20 @@ module.exports = ({ services }) => [
         request.appSession,
         request.params.conversationId,
         request.body.content,
+      ),
+  },
+  {
+    method: 'POST',
+    url: '/v1/conversations/:conversationId/close',
+    access: ['user', 'admin'],
+    schema: {
+      tags: ['Conversations'],
+      summary: 'Close a conversation',
+    },
+    handler: async (request) =>
+      services.conversationService.closeForActor(
+        request.appSession,
+        request.params.conversationId,
       ),
   },
   {

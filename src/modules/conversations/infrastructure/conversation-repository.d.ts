@@ -18,6 +18,15 @@ export class ConversationRepository {
   findById(id: string): Promise<Conversation | null>;
   findDocumentById(id: string): Promise<HydratedDocument<Conversation> | null>;
   findByWidgetSessionToken(widgetSessionToken: string): Promise<Conversation | null>;
+  findByChatbotAndAuthClient(
+    chatbotId: string,
+    authClient: string,
+  ): Promise<Conversation | null>;
+  findDocumentByChatbotAndAuthClient(
+    chatbotId: string,
+    authClient: string,
+  ): Promise<HydratedDocument<Conversation> | null>;
+  listLifecycleCandidates(): Promise<Array<HydratedDocument<Conversation>>>;
   listByChatbot(
     chatbotId: string,
     filters?: Partial<Pick<Conversation, 'status'>>,

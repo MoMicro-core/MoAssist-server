@@ -14,8 +14,7 @@ const {
   hasPremiumAccess,
 } = require('../../../shared/application/premium');
 
-const DEFAULT_TRIAL_DAYS = 14;
-const MAX_TRIAL_DAYS = 30;
+const DEFAULT_TRIAL_DAYS = 3;
 
 class BillingService {
   constructor({
@@ -178,15 +177,6 @@ class BillingService {
     });
   }
 
-  resolveTrialDays(value) {
-    if (value === undefined || value === null) return DEFAULT_TRIAL_DAYS;
-    const parsed = Number(value);
-    if (!Number.isInteger(parsed) || parsed <= 0) {
-      throw new BadRequestError('trialDays must be a positive integer');
-    }
-    return Math.min(parsed, MAX_TRIAL_DAYS);
-  }
-
   async startTrial(actor, payload = {}) {
     const chatbot = await this.getOwnedChatbot(actor, payload.chatbotId);
     const subscriptions = await this.subscriptionRepository.listByChatbot(
@@ -205,7 +195,7 @@ class BillingService {
       );
     }
 
-    const trialDays = this.resolveTrialDays(payload.trialDays);
+    const trialDays = DEFAULT_TRIAL_DAYS;
     const now = new Date();
     const premiumCurrentPeriodEnd = new Date(
       now.getTime() + trialDays * 24 * 60 * 60 * 1000,

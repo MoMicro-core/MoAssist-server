@@ -9,9 +9,15 @@ const {
   ForbiddenError,
   NotFoundError,
 } = require('../../../shared/application/errors');
-const { createMessage } = require('../domain/message-factory');
+const {
+  createMessage,
+  getMessageAuthor,
+} = require('../domain/message-factory');
 
 const SESSION_TTL_DAYS = 30;
+const STATUS_SYNC_INTERVAL_MS = 60 * 1000;
+const DEFAULT_INACTIVITY_HOURS = 3;
+const MAX_INACTIVITY_HOURS = 24;
 
 const addDays = (value, days) => {
   const date = new Date(value);
@@ -19,17 +25,117 @@ const addDays = (value, days) => {
   return date;
 };
 
+const toPlainObject = (value) =>
+  typeof value?.toObject === 'function' ? value.toObject() : { ...value };
+
+const normalizeConversationStatus = (status) => {
+  if (status === 'open') return 'active';
+  if (status === 'pending' || status === 'closed') return status;
+  return 'active';
+};
+
+const normalizeMessage = (message) => {
+  const plain = toPlainObject(message);
+  const authorType = plain.authorType || 'assistant';
+  const readByOwner =
+    typeof plain.readByOwner === 'boolean'
+      ? plain.readByOwner
+      : authorType !== 'visitor';
+  const readByVisitor =
+    typeof plain.readByVisitor === 'boolean'
+      ? plain.readByVisitor
+      : authorType === 'visitor';
+  let read = plain.read;
+  if (typeof read !== 'boolean') {
+    read = authorType === 'visitor' ? readByOwner : readByVisitor;
+  }
+
+  return {
+    ...plain,
+    authorType,
+    author: plain.author || getMessageAuthor(authorType),
+    read,
+    readByOwner,
+    readByVisitor,
+  };
+};
+
 const mapConversation = (conversation) => ({
   id: conversation.id,
   chatbotId: conversation.chatbotId,
-  status: conversation.status,
-  visitor: conversation.visitor,
+  ownerUid: conversation.ownerUid,
+  authClient: conversation.authClient || '',
+  status: normalizeConversationStatus(conversation.status),
+  visitor: conversation.visitor || {},
   locale: conversation.locale || {},
   lastMessagePreview: conversation.lastMessagePreview,
   lastMessageAt: conversation.lastMessageAt,
+  lastVisitorMessageAt: conversation.lastVisitorMessageAt || null,
   unreadForOwner: conversation.unreadForOwner,
-  messages: conversation.messages,
+  createdAt: conversation.createdAt || null,
+  updatedAt: conversation.updatedAt || null,
+  messages: Array.isArray(conversation.messages)
+    ? conversation.messages.map(normalizeMessage)
+    : [],
 });
+
+const normalizeContent = (content) => String(content || '').trim();
+
+const normalizeVisitorData = (visitor = {}) => {
+  if (!visitor || typeof visitor !== 'object' || Array.isArray(visitor)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(visitor).flatMap(([key, value]) => {
+      if (value === undefined || value === null) return [];
+      const normalized = String(value).trim();
+      return normalized ? [[key, normalized]] : [];
+    }),
+  );
+};
+
+const isAuthConversation = (conversation) => Boolean(conversation.authClient);
+
+const getInactivityHours = (chatbot) => {
+  const value = chatbot?.settings?.inactivityHours;
+  if (!Number.isInteger(value)) return DEFAULT_INACTIVITY_HOURS;
+  return Math.min(MAX_INACTIVITY_HOURS, Math.max(1, value));
+};
+
+const getInactivityBaseDate = (conversation, authConversation) => {
+  if (authConversation) {
+    return (
+      conversation.lastVisitorMessageAt ||
+      conversation.lastMessageAt ||
+      conversation.createdAt ||
+      conversation.updatedAt ||
+      null
+    );
+  }
+
+  return (
+    conversation.lastMessageAt ||
+    conversation.createdAt ||
+    conversation.updatedAt ||
+    null
+  );
+};
+
+const mergeLocale = (
+  currentLocale = {},
+  incomingLocale = {},
+  language = '',
+) => {
+  const baseCurrentLocale = currentLocale || {};
+  const baseIncomingLocale = incomingLocale || {};
+  const nextLocale = {
+    ...baseCurrentLocale,
+    ...baseIncomingLocale,
+  };
+  if (language) nextLocale.language = language;
+  return nextLocale;
+};
 
 class ConversationService {
   constructor({
@@ -46,6 +152,204 @@ class ConversationService {
     this.widgetSessionRepository = widgetSessionRepository;
     this.responderFactory = responderFactory;
     this.connectionManager = connectionManager;
+    this.statusSyncPromise = null;
+
+    this.statusSyncTimer = setInterval(() => {
+      this.syncConversationStatuses().catch(() => null);
+    }, STATUS_SYNC_INTERVAL_MS);
+    if (typeof this.statusSyncTimer.unref === 'function') {
+      this.statusSyncTimer.unref();
+    }
+
+    queueMicrotask(() => {
+      this.syncConversationStatuses().catch(() => null);
+    });
+  }
+
+  applyConversationLifecycle(document, chatbot, now = new Date()) {
+    const authConversation = isAuthConversation(document);
+    const previousStatus = normalizeConversationStatus(document.status);
+    const inactivityHours = getInactivityHours(chatbot);
+    const inactivityBase = getInactivityBaseDate(document, authConversation);
+
+    let nextStatus;
+    if (authConversation) {
+      const expiresAt =
+        inactivityBase instanceof Date
+          ? inactivityBase.getTime() + inactivityHours * 60 * 60 * 1000
+          : Number.POSITIVE_INFINITY;
+      nextStatus = expiresAt <= now.getTime() ? 'pending' : 'active';
+    } else if (previousStatus === 'closed') {
+      nextStatus = 'closed';
+    } else {
+      const expiresAt =
+        inactivityBase instanceof Date
+          ? inactivityBase.getTime() + inactivityHours * 60 * 60 * 1000
+          : Number.POSITIVE_INFINITY;
+      nextStatus = expiresAt <= now.getTime() ? 'closed' : 'active';
+    }
+
+    const statusChanged =
+      document.status !== nextStatus || previousStatus !== nextStatus;
+    if (statusChanged) document.status = nextStatus;
+
+    return {
+      previousStatus,
+      nextStatus,
+      statusChanged,
+    };
+  }
+
+  publishConversationUpdate(conversation) {
+    const mappedConversation = mapConversation(
+      typeof conversation?.toObject === 'function'
+        ? conversation.toObject()
+        : conversation,
+    );
+    const payload = {
+      conversationId: mappedConversation.id,
+      chatbotId: mappedConversation.chatbotId,
+      conversation: mappedConversation,
+    };
+
+    this.connectionManager.publish(
+      `conversation:${mappedConversation.id}`,
+      'conversation.updated',
+      payload,
+    );
+    this.connectionManager.publish(
+      `chatbot:${mappedConversation.chatbotId}`,
+      'conversation.updated',
+      payload,
+    );
+
+    return mappedConversation;
+  }
+
+  publishConversationRead(conversation, actorType) {
+    const payload = {
+      conversationId: conversation.id,
+      chatbotId: conversation.chatbotId,
+      actorType,
+    };
+
+    this.connectionManager.publish(
+      `conversation:${conversation.id}`,
+      'conversation.read',
+      payload,
+    );
+    this.connectionManager.publish(
+      `chatbot:${conversation.chatbotId}`,
+      'conversation.read',
+      payload,
+    );
+  }
+
+  validateVisitorData(chatbot, visitor = {}) {
+    const normalizedVisitor = normalizeVisitorData(visitor);
+    if (chatbot?.settings?.auth) return normalizedVisitor;
+
+    const visitorData = {};
+    const leadsForm = chatbot?.settings?.leadsForm || [];
+    for (const field of leadsForm) {
+      const value = normalizedVisitor[field.key];
+      if (field.required && !value) {
+        throw new BadRequestError(`${field.label} is required`);
+      }
+      if (value) visitorData[field.key] = value;
+    }
+    return visitorData;
+  }
+
+  async syncConversationStatuses() {
+    if (this.statusSyncPromise) return this.statusSyncPromise;
+
+    this.statusSyncPromise = (async () => {
+      const documents =
+        await this.conversationRepository.listLifecycleCandidates();
+      const chatbotCache = new Map();
+
+      for (const document of documents) {
+        let chatbot = chatbotCache.get(document.chatbotId);
+        if (chatbot === undefined) {
+          chatbot = await this.chatbotRepository.findById(document.chatbotId);
+          chatbot = chatbot || null;
+          chatbotCache.set(document.chatbotId, chatbot);
+        }
+        if (!chatbot) continue;
+
+        const lifecycle = this.applyConversationLifecycle(document, chatbot);
+        if (!document.isModified()) continue;
+
+        await document.save();
+        if (lifecycle.statusChanged) this.publishConversationUpdate(document);
+      }
+    })().finally(() => {
+      this.statusSyncPromise = null;
+    });
+
+    return this.statusSyncPromise;
+  }
+
+  async issueWidgetSession({
+    chatbot,
+    conversationDocument,
+    authClient = '',
+    visitorData = {},
+    origin = '',
+    locale = {},
+    language = '',
+  }) {
+    const widgetToken = createId();
+    const nextLocale = mergeLocale(
+      conversationDocument.locale,
+      locale,
+      language,
+    );
+
+    conversationDocument.widgetSessionToken = widgetToken;
+    conversationDocument.locale = nextLocale;
+    if (authClient) conversationDocument.authClient = authClient;
+    if (Object.keys(visitorData).length) {
+      const currentVisitor = conversationDocument.visitor || {};
+      conversationDocument.visitor = {
+        ...currentVisitor,
+        ...visitorData,
+      };
+    }
+
+    const lifecycle = this.applyConversationLifecycle(
+      conversationDocument,
+      chatbot,
+    );
+    const sessionVisitorData = conversationDocument.visitor || {};
+
+    if (conversationDocument.isModified()) {
+      await conversationDocument.save();
+    }
+    if (lifecycle.statusChanged) {
+      this.publishConversationUpdate(conversationDocument);
+    }
+
+    await this.widgetSessionRepository.create({
+      token: widgetToken,
+      chatbotId: conversationDocument.chatbotId,
+      conversationId: conversationDocument.id,
+      authClient: authClient || '',
+      visitorData: {
+        ...sessionVisitorData,
+      },
+      locale: nextLocale,
+      origin,
+      lastActiveAt: new Date(),
+      expiresAt: addDays(new Date(), SESSION_TTL_DAYS),
+    });
+
+    return {
+      token: widgetToken,
+      conversation: mapConversation(conversationDocument.toObject()),
+      chatbot,
+    };
   }
 
   async createOrRestoreWidgetSession({
@@ -55,81 +359,123 @@ class ConversationService {
     origin,
     locale,
     language,
+    authClient,
   }) {
+    const requestedLanguage = language || locale?.language || '';
+    const chatbot = await this.chatbotService.getPublicWidget(
+      chatbotId,
+      origin,
+      requestedLanguage,
+    );
+    const normalizedAuthClient = normalizeContent(authClient);
+    const visitorData = this.validateVisitorData(chatbot, visitor || {});
+    const baseLocale = locale || {};
+
+    if (chatbot.settings.auth && !normalizedAuthClient) {
+      throw new BadRequestError(
+        'authClient is required when chatbot auth is enabled',
+      );
+    }
+
     if (token) {
       const widgetSession =
         await this.widgetSessionRepository.findByToken(token);
       if (widgetSession && widgetSession.chatbotId === chatbotId) {
-        const conversation = await this.conversationRepository.findById(
-          widgetSession.conversationId,
-        );
-        if (!conversation) throw new NotFoundError('Conversation not found');
-        const preferredLanguage =
-          language || widgetSession.locale?.language || locale?.language || '';
-        const storedLocale = widgetSession.locale || {};
-        const incomingLocale = locale || {};
-        const nextLocale = { ...storedLocale, ...incomingLocale };
-        if (preferredLanguage) nextLocale.language = preferredLanguage;
-
-        await this.widgetSessionRepository.updateByToken(token, {
-          $set: {
-            lastActiveAt: new Date(),
-            expiresAt: addDays(new Date(), SESSION_TTL_DAYS),
-            locale: nextLocale,
-          },
-        });
-
-        if (
-          preferredLanguage &&
-          conversation.locale?.language !== preferredLanguage
-        ) {
-          const conversationDocument =
-            await this.conversationRepository.findDocumentById(conversation.id);
-          if (conversationDocument) {
-            const documentLocale = conversationDocument.locale || {};
-            conversationDocument.locale = {
-              ...documentLocale,
-              language: preferredLanguage,
-            };
-            await conversationDocument.save();
-          }
+        const conversationDocument =
+          await this.conversationRepository.findDocumentById(
+            widgetSession.conversationId,
+          );
+        if (!conversationDocument) {
+          throw new NotFoundError('Conversation not found');
         }
 
-        const mappedConversation = mapConversation({
-          ...conversation,
-          locale: nextLocale,
-        });
+        const conversationAuthClient =
+          widgetSession.authClient || conversationDocument.authClient || '';
+        if (
+          chatbot.settings.auth &&
+          conversationAuthClient &&
+          conversationAuthClient !== normalizedAuthClient
+        ) {
+          // Fall back to authClient lookup below.
+        } else {
+          const preferredLanguage =
+            requestedLanguage ||
+            widgetSession.locale?.language ||
+            conversationDocument.locale?.language ||
+            '';
+          const nextLocale = mergeLocale(
+            conversationDocument.locale,
+            baseLocale,
+            preferredLanguage,
+          );
 
-        const chatbot = await this.chatbotService.getPublicWidget(
+          conversationDocument.locale = nextLocale;
+          if (Object.keys(visitorData).length) {
+            const currentVisitor = conversationDocument.visitor || {};
+            conversationDocument.visitor = {
+              ...currentVisitor,
+              ...visitorData,
+            };
+          }
+          if (normalizedAuthClient) {
+            conversationDocument.authClient = normalizedAuthClient;
+          }
+
+          const lifecycle = this.applyConversationLifecycle(
+            conversationDocument,
+            chatbot,
+          );
+
+          const widgetVisitorData = widgetSession.visitorData || {};
+          await this.widgetSessionRepository.updateByToken(token, {
+            $set: {
+              authClient: normalizedAuthClient || conversationAuthClient || '',
+              lastActiveAt: new Date(),
+              expiresAt: addDays(new Date(), SESSION_TTL_DAYS),
+              locale: nextLocale,
+              origin,
+              visitorData: {
+                ...widgetVisitorData,
+                ...visitorData,
+              },
+            },
+          });
+
+          if (conversationDocument.isModified()) {
+            await conversationDocument.save();
+          }
+          if (lifecycle.statusChanged) {
+            this.publishConversationUpdate(conversationDocument);
+          }
+
+          return {
+            token,
+            conversation: mapConversation(conversationDocument.toObject()),
+            chatbot,
+          };
+        }
+      }
+    }
+
+    if (chatbot.settings.auth) {
+      const conversationDocument =
+        await this.conversationRepository.findDocumentByChatbotAndAuthClient(
           chatbotId,
-          origin,
-          preferredLanguage,
+          normalizedAuthClient,
         );
-        return {
-          token,
-          conversation: mappedConversation,
+      if (conversationDocument) {
+        return this.issueWidgetSession({
           chatbot,
-        };
+          conversationDocument,
+          authClient: normalizedAuthClient,
+          visitorData,
+          origin,
+          locale: baseLocale,
+          language: requestedLanguage,
+        });
       }
     }
 
-    const chatbot = await this.chatbotService.getPublicWidget(
-      chatbotId,
-      origin,
-      language || locale?.language || '',
-    );
-    const leadsForm = chatbot.settings.leadsForm || [];
-    const visitorData = {};
-
-    for (const field of leadsForm) {
-      const value = visitor?.[field.key];
-      if (field.required && !value) {
-        throw new BadRequestError(`${field.label} is required`);
-      }
-      if (value) visitorData[field.key] = value;
-    }
-
-    const baseLocale = locale || {};
     const normalizedLocale = { ...baseLocale };
     if (chatbot.settings.defaultLanguage) {
       normalizedLocale.language = chatbot.settings.defaultLanguage;
@@ -141,11 +487,13 @@ class ConversationService {
       chatbotId,
       ownerUid: chatbot.ownerUid,
       widgetSessionToken: widgetToken,
+      authClient: normalizedAuthClient,
       visitor: visitorData,
       locale: normalizedLocale,
-      status: 'open',
+      status: 'active',
       lastMessagePreview: '',
       lastMessageAt: new Date(),
+      lastVisitorMessageAt: null,
       unreadForOwner: 0,
       messages: [],
     });
@@ -154,6 +502,7 @@ class ConversationService {
       token: widgetToken,
       chatbotId,
       conversationId: conversation.id,
+      authClient: normalizedAuthClient,
       visitorData,
       locale: normalizedLocale,
       origin,
@@ -176,20 +525,84 @@ class ConversationService {
     };
   }
 
-  async authenticateWidget(token) {
+  async authenticateWidget(token, authClient = '') {
     const widgetSession = await this.widgetSessionRepository.findByToken(token);
     if (!widgetSession) throw new NotFoundError('Widget session not found');
-    const conversation = await this.conversationRepository.findById(
-      widgetSession.conversationId,
+
+    const conversationDocument =
+      await this.conversationRepository.findDocumentById(
+        widgetSession.conversationId,
+      );
+    if (!conversationDocument) {
+      throw new NotFoundError('Conversation not found');
+    }
+
+    const conversationAuthClient =
+      widgetSession.authClient || conversationDocument.authClient || '';
+    if (conversationAuthClient) {
+      const normalizedAuthClient = normalizeContent(authClient);
+      if (!normalizedAuthClient) {
+        throw new BadRequestError(
+          'authClient is required for authenticated widget sessions',
+        );
+      }
+      if (normalizedAuthClient !== conversationAuthClient) {
+        throw new ForbiddenError('Widget session is not accessible');
+      }
+    }
+
+    const chatbot = await this.chatbotRepository.findById(
+      conversationDocument.chatbotId,
     );
-    if (!conversation) throw new NotFoundError('Conversation not found');
-    await this.widgetSessionRepository.updateByToken(token, {
-      $set: {
-        lastActiveAt: new Date(),
-        expiresAt: addDays(new Date(), SESSION_TTL_DAYS),
+    if (!chatbot) throw new NotFoundError('Chatbot not found');
+
+    const lifecycle = this.applyConversationLifecycle(
+      conversationDocument,
+      chatbot,
+    );
+    let readChanged = false;
+
+    conversationDocument.messages = conversationDocument.messages.map(
+      (message) => {
+        const normalized = normalizeMessage(message);
+        if (normalized.authorType === 'visitor' || normalized.readByVisitor) {
+          return normalized;
+        }
+
+        readChanged = true;
+        return {
+          ...normalized,
+          readByVisitor: true,
+          read: true,
+        };
       },
-    });
-    return { widgetSession, conversation };
+    );
+
+    if (conversationDocument.isModified()) {
+      await conversationDocument.save();
+    }
+
+    const refreshedWidgetSession =
+      await this.widgetSessionRepository.updateByToken(token, {
+        $set: {
+          authClient: conversationAuthClient,
+          lastActiveAt: new Date(),
+          expiresAt: addDays(new Date(), SESSION_TTL_DAYS),
+        },
+      });
+    const updatedWidgetSession = refreshedWidgetSession || widgetSession;
+
+    if (lifecycle.statusChanged) {
+      this.publishConversationUpdate(conversationDocument);
+    }
+    if (readChanged) {
+      this.publishConversationRead(conversationDocument, 'visitor');
+    }
+
+    return {
+      widgetSession: updatedWidgetSession,
+      conversation: mapConversation(conversationDocument.toObject()),
+    };
   }
 
   async listForActor(actor, chatbotId) {
@@ -198,12 +611,16 @@ class ConversationService {
     if (!canManageOwnerResource(actor, chatbot.ownerUid)) {
       throw new ForbiddenError('Chatbot is not accessible');
     }
+
+    await this.syncConversationStatuses();
     const conversations =
       await this.conversationRepository.listByChatbot(chatbotId);
     return conversations.map(mapConversation);
   }
 
   async listAllForActor(actor, filters = {}) {
+    await this.syncConversationStatuses();
+
     const normalized = {};
     if (filters.status) normalized.status = filters.status;
     if (filters.chatbotId) normalized.chatbotId = filters.chatbotId;
@@ -215,29 +632,54 @@ class ConversationService {
   }
 
   async getForActor(actor, conversationId) {
-    const conversation =
-      await this.conversationRepository.findById(conversationId);
-    if (!conversation) throw new NotFoundError('Conversation not found');
-    if (!canManageOwnerResource(actor, conversation.ownerUid)) {
+    const document =
+      await this.conversationRepository.findDocumentById(conversationId);
+    if (!document) throw new NotFoundError('Conversation not found');
+    if (!canManageOwnerResource(actor, document.ownerUid)) {
       throw new ForbiddenError('Conversation is not accessible');
     }
-    return mapConversation(conversation);
+
+    const chatbot = await this.chatbotRepository.findById(document.chatbotId);
+    if (!chatbot) throw new NotFoundError('Chatbot not found');
+
+    const lifecycle = this.applyConversationLifecycle(document, chatbot);
+    if (document.isModified()) await document.save();
+    if (lifecycle.statusChanged) this.publishConversationUpdate(document);
+
+    return mapConversation(document.toObject());
   }
 
-  async sendVisitorMessage({ widgetToken, content }) {
-    if (!content) throw new BadRequestError('Message content is required');
-    const { conversation } = await this.authenticateWidget(widgetToken);
+  async sendVisitorMessage({ widgetToken, authClient = '', content }) {
+    const normalizedContent = normalizeContent(content);
+    if (!normalizedContent) {
+      throw new BadRequestError('Message content is required');
+    }
+
+    const { conversation } = await this.authenticateWidget(
+      widgetToken,
+      authClient,
+    );
     const chatbot = await this.chatbotRepository.findById(
       conversation.chatbotId,
     );
+    if (!chatbot) throw new NotFoundError('Chatbot not found');
+
     const document = await this.conversationRepository.findDocumentById(
       conversation.id,
     );
-    const message = createMessage('visitor', content);
+    if (!document) throw new NotFoundError('Conversation not found');
+    if (normalizeConversationStatus(document.status) === 'closed') {
+      throw new BadRequestError('Conversation is closed');
+    }
 
+    const previousStatus = normalizeConversationStatus(document.status);
+    const message = createMessage('visitor', normalizedContent);
+
+    document.status = 'active';
     document.messages.push(message);
-    document.lastMessagePreview = content.slice(0, 120);
+    document.lastMessagePreview = normalizedContent.slice(0, 120);
     document.lastMessageAt = message.createdAt;
+    document.lastVisitorMessageAt = message.createdAt;
     document.unreadForOwner += 1;
     await document.save();
 
@@ -257,6 +699,7 @@ class ConversationService {
       'message.created',
       payload,
     );
+    if (previousStatus !== 'active') this.publishConversationUpdate(document);
 
     queueMicrotask(async () => {
       try {
@@ -264,7 +707,7 @@ class ConversationService {
         const answer = await responder.respond({
           chatbot,
           conversation: document.toObject(),
-          prompt: content,
+          prompt: normalizedContent,
         });
 
         if (!answer) return;
@@ -273,6 +716,7 @@ class ConversationService {
           document.id,
         );
         if (!refreshed) return;
+        if (normalizeConversationStatus(refreshed.status) === 'closed') return;
 
         const aiMessage = createMessage('assistant', answer);
         refreshed.messages.push(aiMessage);
@@ -305,7 +749,11 @@ class ConversationService {
   }
 
   async sendOwnerMessage(actor, conversationId, content) {
-    if (!content) throw new BadRequestError('Message content is required');
+    const normalizedContent = normalizeContent(content);
+    if (!normalizedContent) {
+      throw new BadRequestError('Message content is required');
+    }
+
     const document =
       await this.conversationRepository.findDocumentById(conversationId);
     if (!document) throw new NotFoundError('Conversation not found');
@@ -313,9 +761,20 @@ class ConversationService {
       throw new ForbiddenError('Conversation is not accessible');
     }
 
-    const message = createMessage('owner', content);
+    const chatbot = await this.chatbotRepository.findById(document.chatbotId);
+    if (!chatbot) throw new NotFoundError('Chatbot not found');
+
+    const lifecycle = this.applyConversationLifecycle(document, chatbot);
+    if (document.isModified()) await document.save();
+    if (lifecycle.statusChanged) this.publishConversationUpdate(document);
+
+    if (normalizeConversationStatus(document.status) === 'closed') {
+      throw new BadRequestError('Conversation is closed');
+    }
+
+    const message = createMessage('owner', normalizedContent);
     document.messages.push(message);
-    document.lastMessagePreview = content.slice(0, 120);
+    document.lastMessagePreview = normalizedContent.slice(0, 120);
     document.lastMessageAt = message.createdAt;
     await document.save();
 
@@ -339,6 +798,54 @@ class ConversationService {
     return payload;
   }
 
+  async closeForWidget(widgetToken, authClient = '') {
+    const { conversation } = await this.authenticateWidget(
+      widgetToken,
+      authClient,
+    );
+    const document = await this.conversationRepository.findDocumentById(
+      conversation.id,
+    );
+    if (!document) throw new NotFoundError('Conversation not found');
+    if (isAuthConversation(document)) {
+      throw new BadRequestError('Authenticated conversations cannot be closed');
+    }
+
+    if (normalizeConversationStatus(document.status) !== 'closed') {
+      document.status = 'closed';
+      await document.save();
+      this.publishConversationUpdate(document);
+    }
+
+    return {
+      closed: true,
+      conversation: mapConversation(document.toObject()),
+    };
+  }
+
+  async closeForActor(actor, conversationId) {
+    const document =
+      await this.conversationRepository.findDocumentById(conversationId);
+    if (!document) throw new NotFoundError('Conversation not found');
+    if (!canManageOwnerResource(actor, document.ownerUid)) {
+      throw new ForbiddenError('Conversation is not accessible');
+    }
+    if (isAuthConversation(document)) {
+      throw new BadRequestError('Authenticated conversations cannot be closed');
+    }
+
+    if (normalizeConversationStatus(document.status) !== 'closed') {
+      document.status = 'closed';
+      await document.save();
+      this.publishConversationUpdate(document);
+    }
+
+    return {
+      closed: true,
+      conversation: mapConversation(document.toObject()),
+    };
+  }
+
   async markRead(actor, conversationId) {
     const document =
       await this.conversationRepository.findDocumentById(conversationId);
@@ -347,22 +854,59 @@ class ConversationService {
       throw new ForbiddenError('Conversation is not accessible');
     }
 
+    let changed = false;
     document.unreadForOwner = 0;
-    document.messages = document.messages.map((message) => ({
-      ...message.toObject(),
-      readByOwner:
-        message.authorType === 'visitor' ? true : message.readByOwner,
-    }));
-    await document.save();
+    document.messages = document.messages.map((message) => {
+      const normalized = normalizeMessage(message);
+      if (normalized.authorType !== 'visitor' || normalized.readByOwner) {
+        return normalized;
+      }
 
-    this.connectionManager.publish(
-      `chatbot:${document.chatbotId}`,
-      'conversation.read',
-      {
-        conversationId: document.id,
-        chatbotId: document.chatbotId,
-      },
+      changed = true;
+      return {
+        ...normalized,
+        readByOwner: true,
+        read: true,
+      };
+    });
+
+    if (changed || document.isModified()) {
+      await document.save();
+      this.publishConversationRead(document, 'owner');
+    }
+
+    return { read: true };
+  }
+
+  async markReadByWidget(widgetToken) {
+    const widgetSession =
+      await this.widgetSessionRepository.findByToken(widgetToken);
+    if (!widgetSession) throw new NotFoundError('Widget session not found');
+
+    const document = await this.conversationRepository.findDocumentById(
+      widgetSession.conversationId,
     );
+    if (!document) throw new NotFoundError('Conversation not found');
+
+    let changed = false;
+    document.messages = document.messages.map((message) => {
+      const normalized = normalizeMessage(message);
+      if (normalized.authorType === 'visitor' || normalized.readByVisitor) {
+        return normalized;
+      }
+
+      changed = true;
+      return {
+        ...normalized,
+        readByVisitor: true,
+        read: true,
+      };
+    });
+
+    if (changed) {
+      await document.save();
+      this.publishConversationRead(document, 'visitor');
+    }
 
     return { read: true };
   }
