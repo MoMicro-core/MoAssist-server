@@ -675,6 +675,8 @@ class ChatbotService {
     const chatbot = await this.getForActor(actor, chatbotId);
     const scriptUrl = `${baseUrl}/chat/script/${chatbot.id}`;
     const iframeUrl = `${baseUrl}/chat/iframe/${chatbot.id}`;
+    const dashboardScriptUrl = `${baseUrl}/chat/dashboard/script/${chatbot.id}`;
+    const dashboardIframeUrl = `${baseUrl}/chat/dashboard/iframe/${chatbot.id}`;
     const installLanguage = this.normalizeDefaultLanguage(
       chatbot.settings?.defaultLanguage,
       false,
@@ -684,8 +686,12 @@ class ChatbotService {
       chatbotId: chatbot.id,
       scriptUrl,
       iframeUrl,
+      dashboardScriptUrl,
+      dashboardIframeUrl,
       scriptSnippet: `<script src="${scriptUrl}?lang=${installLanguage}" defer></script>`,
       iframeSnippet: `<iframe src="${iframeUrl}?lang=${installLanguage}" title="${chatbot.settings.botName}" style="width:420px;height:680px;border:0;"></iframe>`,
+      dashboardScriptSnippet: `<script>window.MOMICRO_ASSIST_DASHBOARD_CONFIG = window.MOMICRO_ASSIST_DASHBOARD_CONFIG || {}; window.MOMICRO_ASSIST_DASHBOARD_CONFIG["${chatbot.id}"] = { sessionToken: "YOUR_SESSION_TOKEN", selector: "#momicro-dashboard-root", height: "760px" };</script>\n<script src="${dashboardScriptUrl}" defer></script>`,
+      dashboardIframeSnippet: `<iframe src="${dashboardIframeUrl}?sessionToken=YOUR_SESSION_TOKEN" title="${chatbot.settings.botName} Dashboard" style="width:100%;height:760px;border:0;border-radius:24px;"></iframe>`,
     };
   }
 

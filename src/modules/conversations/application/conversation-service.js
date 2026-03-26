@@ -9,10 +9,7 @@ const {
   ForbiddenError,
   NotFoundError,
 } = require('../../../shared/application/errors');
-const {
-  createMessage,
-  getMessageAuthor,
-} = require('../domain/message-factory');
+const { createMessage } = require('../domain/message-factory');
 
 const SESSION_TTL_DAYS = 30;
 const STATUS_SYNC_INTERVAL_MS = 60 * 1000;
@@ -34,32 +31,6 @@ const normalizeConversationStatus = (status) => {
   return 'active';
 };
 
-const normalizeMessage = (message) => {
-  const plain = toPlainObject(message);
-  const authorType = plain.authorType || 'assistant';
-  const readByOwner =
-    typeof plain.readByOwner === 'boolean'
-      ? plain.readByOwner
-      : authorType !== 'visitor';
-  const readByVisitor =
-    typeof plain.readByVisitor === 'boolean'
-      ? plain.readByVisitor
-      : authorType === 'visitor';
-  let read = plain.read;
-  if (typeof read !== 'boolean') {
-    read = authorType === 'visitor' ? readByOwner : readByVisitor;
-  }
-
-  return {
-    ...plain,
-    authorType,
-    author: plain.author || getMessageAuthor(authorType),
-    read,
-    readByOwner,
-    readByVisitor,
-  };
-};
-
 const mapConversation = (conversation) => ({
   id: conversation.id,
   chatbotId: conversation.chatbotId,
@@ -75,7 +46,7 @@ const mapConversation = (conversation) => ({
   createdAt: conversation.createdAt || null,
   updatedAt: conversation.updatedAt || null,
   messages: Array.isArray(conversation.messages)
-    ? conversation.messages.map(normalizeMessage)
+    ? conversation.messages.map(toPlainObject)
     : [],
 });
 
@@ -564,14 +535,17 @@ class ConversationService {
 
     conversationDocument.messages = conversationDocument.messages.map(
       (message) => {
-        const normalized = normalizeMessage(message);
-        if (normalized.authorType === 'visitor' || normalized.readByVisitor) {
-          return normalized;
+        const plainMessage = toPlainObject(message);
+        if (
+          plainMessage.authorType === 'visitor' ||
+          plainMessage.readByVisitor
+        ) {
+          return plainMessage;
         }
 
         readChanged = true;
         return {
-          ...normalized,
+          ...plainMessage,
           readByVisitor: true,
           read: true,
         };
@@ -857,14 +831,14 @@ class ConversationService {
     let changed = false;
     document.unreadForOwner = 0;
     document.messages = document.messages.map((message) => {
-      const normalized = normalizeMessage(message);
-      if (normalized.authorType !== 'visitor' || normalized.readByOwner) {
-        return normalized;
+      const plainMessage = toPlainObject(message);
+      if (plainMessage.authorType !== 'visitor' || plainMessage.readByOwner) {
+        return plainMessage;
       }
 
       changed = true;
       return {
-        ...normalized,
+        ...plainMessage,
         readByOwner: true,
         read: true,
       };
@@ -890,14 +864,14 @@ class ConversationService {
 
     let changed = false;
     document.messages = document.messages.map((message) => {
-      const normalized = normalizeMessage(message);
-      if (normalized.authorType === 'visitor' || normalized.readByVisitor) {
-        return normalized;
+      const plainMessage = toPlainObject(message);
+      if (plainMessage.authorType === 'visitor' || plainMessage.readByVisitor) {
+        return plainMessage;
       }
 
       changed = true;
       return {
-        ...normalized,
+        ...plainMessage,
         readByVisitor: true,
         read: true,
       };

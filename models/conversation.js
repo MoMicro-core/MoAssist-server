@@ -31,12 +31,32 @@ module.exports = {
             type: String,
             required: true,
             enum: ['human', 'ai'],
+            default() {
+              return this.authorType === 'assistant' ? 'ai' : 'human';
+            },
           },
           content: { type: String, required: true },
           createdAt: { type: Date, required: true },
-          read: { type: Boolean, default: false },
-          readByOwner: { type: Boolean, default: false },
-          readByVisitor: { type: Boolean, default: false },
+          read: {
+            type: Boolean,
+            default() {
+              return this.authorType === 'visitor'
+                ? Boolean(this.readByOwner)
+                : Boolean(this.readByVisitor);
+            },
+          },
+          readByOwner: {
+            type: Boolean,
+            default() {
+              return this.authorType !== 'visitor';
+            },
+          },
+          readByVisitor: {
+            type: Boolean,
+            default() {
+              return this.authorType === 'visitor';
+            },
+          },
         },
       ],
       default: [],

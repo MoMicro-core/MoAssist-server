@@ -168,4 +168,51 @@ module.exports = ({ services, fastify }) => [
       });
     },
   },
+  {
+    method: 'GET',
+    url: '/chat/dashboard/script/:chatbotId',
+    access: ['public'],
+    schema: {
+      tags: ['Widget'],
+      summary: 'Install script for an owner dashboard embed',
+      querystring: {
+        type: 'object',
+        properties: {
+          sessionToken: { type: 'string' },
+        },
+      },
+    },
+    handler: async (request, reply) => {
+      const baseUrl = getBaseUrl(request, fastify.config.environment.appUrl);
+      reply.type('application/javascript');
+      return services.embedService.renderDashboardScript({
+        chatbotId: request.params.chatbotId,
+        baseUrl,
+      });
+    },
+  },
+  {
+    method: 'GET',
+    url: '/chat/dashboard/iframe/:chatbotId',
+    access: ['public'],
+    schema: {
+      tags: ['Widget'],
+      summary: 'Owner dashboard iframe page',
+      querystring: {
+        type: 'object',
+        properties: {
+          sessionToken: { type: 'string' },
+        },
+      },
+    },
+    handler: async (request, reply) => {
+      const baseUrl = getBaseUrl(request, fastify.config.environment.appUrl);
+      reply.type('text/html');
+      return services.embedService.renderDashboardIframe({
+        chatbotId: request.params.chatbotId,
+        baseUrl,
+        sessionToken: request.query?.sessionToken || '',
+      });
+    },
+  },
 ];

@@ -82,8 +82,12 @@ export class ChatbotService {
     chatbotId: string;
     scriptUrl: string;
     iframeUrl: string;
+    dashboardScriptUrl: string;
+    dashboardIframeUrl: string;
     scriptSnippet: string;
     iframeSnippet: string;
+    dashboardScriptSnippet: string;
+    dashboardIframeSnippet: string;
   }>;
   getAnalytics(
     actor: Actor,
