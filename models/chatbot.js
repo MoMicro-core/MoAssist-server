@@ -39,6 +39,10 @@ module.exports = {
         type: String,
         default: 'english',
       },
+      enabledLanguages: {
+        type: [String],
+        default: ['english'],
+      },
       widgetLocation: {
         type: String,
         default: 'right',

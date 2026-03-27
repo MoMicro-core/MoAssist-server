@@ -338,7 +338,10 @@ class ConversationService {
       origin,
       requestedLanguage,
     );
-    const normalizedAuthClient = normalizeContent(authClient);
+    const providedAuthClient = normalizeContent(authClient);
+    const normalizedAuthClient = chatbot.settings.auth
+      ? providedAuthClient
+      : '';
     const visitorData = this.validateVisitorData(chatbot, visitor || {});
     const baseLocale = locale || {};
 
@@ -363,9 +366,8 @@ class ConversationService {
         const conversationAuthClient =
           widgetSession.authClient || conversationDocument.authClient || '';
         if (
-          chatbot.settings.auth &&
           conversationAuthClient &&
-          conversationAuthClient !== normalizedAuthClient
+          conversationAuthClient !== providedAuthClient
         ) {
           // Fall back to authClient lookup below.
         } else {
@@ -388,7 +390,7 @@ class ConversationService {
               ...visitorData,
             };
           }
-          if (normalizedAuthClient) {
+          if (chatbot.settings.auth && normalizedAuthClient) {
             conversationDocument.authClient = normalizedAuthClient;
           }
 
@@ -400,7 +402,7 @@ class ConversationService {
           const widgetVisitorData = widgetSession.visitorData || {};
           await this.widgetSessionRepository.updateByToken(token, {
             $set: {
-              authClient: normalizedAuthClient || conversationAuthClient || '',
+              authClient: conversationAuthClient || normalizedAuthClient || '',
               lastActiveAt: new Date(),
               expiresAt: addDays(new Date(), SESSION_TTL_DAYS),
               locale: nextLocale,

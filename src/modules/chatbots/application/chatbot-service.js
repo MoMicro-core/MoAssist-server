@@ -9,11 +9,11 @@ const {
   canManageOwnerResource,
 } = require('../../../shared/application/permissions');
 const {
-  BadRequestError,
   ForbiddenError,
+  BadRequestError,
   NotFoundError,
 } = require('../../../shared/application/errors');
-const { hasPremiumAccess } = require('../../../shared/application/premium');
+const { TIER_CAPABILITIES } = require('../../../shared/application/premium');
 const { createDefaultChatbotSettings } = require('../domain/default-settings');
 
 const DEFAULT_LANGUAGE = 'english';
@@ -287,6 +287,7 @@ class ChatbotService {
     knowledgeFileRepository,
     openai,
     countriesConfig,
+    tierCatalog,
   }) {
     this.chatbotRepository = chatbotRepository;
     this.conversationRepository = conversationRepository;
@@ -294,6 +295,72 @@ class ChatbotService {
     this.knowledgeFileRepository = knowledgeFileRepository;
     this.openai = openai;
     this.allowedLanguages = collectAllowedLanguages(countriesConfig || {});
+    this.tierCatalog = tierCatalog;
+  }
+
+  getTierPolicy(chatbot = {}) {
+    return this.tierCatalog.resolveForState(chatbot);
+  }
+
+  getFeatureAccess(chatbot = {}) {
+    const tier = this.getTierPolicy(chatbot);
+
+    return {
+      authenticatedWidget: tier.hasCapability(
+        TIER_CAPABILITIES.AUTHENTICATED_WIDGET,
+      ),
+      aiResponder: tier.hasCapability(TIER_CAPABILITIES.AI_RESPONDER),
+      knowledgeFiles: tier.hasCapability(TIER_CAPABILITIES.KNOWLEDGE_FILES),
+    };
+  }
+
+  decorateChatbot(chatbot = {}, extras = {}) {
+    const plain =
+      typeof chatbot?.toObject === 'function' ? chatbot.toObject() : chatbot;
+    return {
+      ...plain,
+      ...extras,
+      currentTier: this.getTierPolicy(plain).toSummary(),
+      featureAccess: this.getFeatureAccess(plain),
+      settings: this.applyTierAccess(plain, plain.settings),
+    };
+  }
+
+  assertRequestedSettingsAccess(chatbot, requestedSettings = {}) {
+    const tier = this.getTierPolicy(chatbot);
+
+    if (requestedSettings.auth === true) {
+      tier.assertCapability(
+        TIER_CAPABILITIES.AUTHENTICATED_WIDGET,
+        'Current tier does not allow authClient conversations',
+      );
+    }
+
+    if (requestedSettings.ai?.enabled === true) {
+      tier.assertCapability(
+        TIER_CAPABILITIES.AI_RESPONDER,
+        'Current tier does not allow AI responses',
+      );
+    }
+  }
+
+  applyTierAccess(chatbot, settings) {
+    const tier = this.getTierPolicy(chatbot);
+    const nextSettings = deepMerge(createDefaultChatbotSettings(), settings);
+
+    if (!tier.hasCapability(TIER_CAPABILITIES.AUTHENTICATED_WIDGET)) {
+      nextSettings.auth = false;
+    }
+
+    if (!tier.hasCapability(TIER_CAPABILITIES.AI_RESPONDER)) {
+      const currentAiSettings = nextSettings.ai || {};
+      nextSettings.ai = {
+        ...currentAiSettings,
+        enabled: false,
+      };
+    }
+
+    return nextSettings;
   }
 
   normalizeConversationSettings(settings = {}, strict = true) {
@@ -343,6 +410,62 @@ class ChatbotService {
     );
   }
 
+  normalizeEnabledLanguages(value, defaultLanguage, strict = true) {
+    const normalizedDefault = this.normalizeDefaultLanguage(
+      defaultLanguage,
+      false,
+    );
+
+    if (value === undefined) {
+      return [normalizedDefault];
+    }
+
+    if (!Array.isArray(value)) {
+      if (!strict) return [normalizedDefault];
+      throw new BadRequestError('enabledLanguages must be an array of strings');
+    }
+
+    const selected = [];
+
+    for (const item of value) {
+      if (typeof item !== 'string') {
+        if (!strict) continue;
+        throw new BadRequestError(
+          'enabledLanguages must be an array of strings',
+        );
+      }
+
+      const language = canonicalizeLanguage(item);
+      if (!language || !this.allowedLanguages.includes(language)) {
+        if (!strict) continue;
+        throw new BadRequestError(
+          `enabledLanguages must be within: ${this.allowedLanguages.join(', ')}`,
+        );
+      }
+
+      if (!selected.includes(language)) {
+        selected.push(language);
+      }
+    }
+
+    const ordered = selected.includes(normalizedDefault)
+      ? [
+          normalizedDefault,
+          ...selected.filter((language) => language !== normalizedDefault),
+        ]
+      : [normalizedDefault, ...selected];
+
+    return ordered.length ? ordered : [normalizedDefault];
+  }
+
+  getEnabledLanguages(settings = {}) {
+    return this.normalizeEnabledLanguages(
+      settings.enabledLanguages,
+      settings.defaultLanguage,
+      false,
+    );
+  }
+
   resolvePreferredLanguage(value, fallbackLanguage) {
     const fallback = this.normalizeDefaultLanguage(fallbackLanguage, false);
     const candidate = canonicalizeLanguage(value);
@@ -350,14 +473,18 @@ class ChatbotService {
     return this.allowedLanguages.includes(candidate) ? candidate : fallback;
   }
 
-  normalizeTranslations(rawTranslations, sourcePack) {
+  normalizeTranslations(
+    rawTranslations,
+    sourcePack,
+    enabledLanguages = this.allowedLanguages,
+  ) {
     const translations =
       rawTranslations && typeof rawTranslations === 'object'
         ? rawTranslations
         : {};
     const result = {};
 
-    for (const language of this.allowedLanguages) {
+    for (const language of enabledLanguages) {
       result[language] = normalizeLanguagePack(
         translations[language],
         sourcePack,
@@ -367,11 +494,15 @@ class ChatbotService {
     return result;
   }
 
-  hasLanguageCoverage(settings, sourcePack) {
+  hasLanguageCoverage(
+    settings,
+    sourcePack,
+    enabledLanguages = this.getEnabledLanguages(settings),
+  ) {
     const translations = settings?.translations;
     if (!translations || typeof translations !== 'object') return false;
 
-    return this.allowedLanguages.every((language) => {
+    return enabledLanguages.every((language) => {
       const pack = translations[language];
       if (!pack || typeof pack !== 'object') return false;
       return (
@@ -389,7 +520,27 @@ class ChatbotService {
     return JSON.stringify(previous) !== JSON.stringify(next);
   }
 
-  async translatePack(sourcePack, sourceLanguage) {
+  async translatePack(
+    sourcePack,
+    sourceLanguage,
+    enabledLanguages = this.allowedLanguages,
+  ) {
+    const selectedLanguages =
+      Array.isArray(enabledLanguages) && enabledLanguages.length
+        ? enabledLanguages
+        : [sourceLanguage];
+    const targetLanguages = selectedLanguages.filter(
+      (language) => language !== sourceLanguage,
+    );
+
+    if (!targetLanguages.length) {
+      return this.normalizeTranslations(
+        { [sourceLanguage]: sourcePack },
+        sourcePack,
+        selectedLanguages,
+      );
+    }
+
     const raw = await this.openai.createChatCompletion({
       temperature: 0,
       messages: [
@@ -399,7 +550,7 @@ class ChatbotService {
         },
         {
           role: 'user',
-          content: `sourceLanguage=${sourceLanguage}\ntargetLanguages=${this.allowedLanguages.join(',')}\ncontent=${JSON.stringify(sourcePack)}\nReturn {"translations":{"<language>":{"title":"","botName":"","initialMessage":"","inputPlaceholder":"","suggestedMessages":[],"leadsFormTitle":"","leadsFormLabels":[],"aiTemplate":"","aiGuidelines":""}}}. Keep arrays lengths unchanged and preserve placeholders/URLs.`,
+          content: `sourceLanguage=${sourceLanguage}\ntargetLanguages=${targetLanguages.join(',')}\ncontent=${JSON.stringify(sourcePack)}\nReturn {"translations":{"<language>":{"title":"","botName":"","initialMessage":"","inputPlaceholder":"","suggestedMessages":[],"leadsFormTitle":"","leadsFormLabels":[],"aiTemplate":"","aiGuidelines":""}}}. Keep arrays lengths unchanged and preserve placeholders/URLs.`,
         },
       ],
     });
@@ -413,7 +564,14 @@ class ChatbotService {
       throw new BadRequestError('Failed to parse chatbot translations');
     }
 
-    return this.normalizeTranslations(translations, sourcePack);
+    return this.normalizeTranslations(
+      {
+        ...translations,
+        [sourceLanguage]: sourcePack,
+      },
+      sourcePack,
+      selectedLanguages,
+    );
   }
 
   async localizeSettings(
@@ -425,9 +583,18 @@ class ChatbotService {
       settings.defaultLanguage,
     );
     settings.defaultLanguage = defaultLanguage;
+    settings.enabledLanguages = this.normalizeEnabledLanguages(
+      settings.enabledLanguages,
+      defaultLanguage,
+    );
+    const enabledLanguages = settings.enabledLanguages;
 
     const sourcePack = extractLanguagePack(settings);
-    const hasCoverage = this.hasLanguageCoverage(settings, sourcePack);
+    const hasCoverage = this.hasLanguageCoverage(
+      settings,
+      sourcePack,
+      enabledLanguages,
+    );
     const shouldTranslate =
       forceTranslate || (translateIfMissing && !hasCoverage);
     let translations =
@@ -436,15 +603,23 @@ class ChatbotService {
         : {};
 
     if (shouldTranslate) {
-      translations = await this.translatePack(sourcePack, defaultLanguage);
-    } else if (hasCoverage) {
-      translations = this.normalizeTranslations(translations, sourcePack);
+      translations = await this.translatePack(
+        sourcePack,
+        defaultLanguage,
+        enabledLanguages,
+      );
+    } else {
+      translations = this.normalizeTranslations(
+        translations,
+        sourcePack,
+        enabledLanguages,
+      );
     }
 
-    const selectedPack =
-      shouldTranslate || hasCoverage
-        ? normalizeLanguagePack(translations[defaultLanguage], sourcePack)
-        : sourcePack;
+    const selectedPack = normalizeLanguagePack(
+      translations[defaultLanguage],
+      sourcePack,
+    );
     applyLanguagePack(settings, selectedPack);
     settings.translations = translations;
     settings.translationSourceHash = createLanguageHash(
@@ -460,16 +635,26 @@ class ChatbotService {
       settings.defaultLanguage,
       false,
     );
-    const defaultLanguage = this.resolvePreferredLanguage(
+    settings.enabledLanguages = this.normalizeEnabledLanguages(
+      settings.enabledLanguages,
+      fallbackLanguage,
+      false,
+    );
+    const enabledLanguages = settings.enabledLanguages;
+    const preferredResolved = this.resolvePreferredLanguage(
       preferredLanguage,
       fallbackLanguage,
     );
+    const defaultLanguage = enabledLanguages.includes(preferredResolved)
+      ? preferredResolved
+      : fallbackLanguage;
     settings.defaultLanguage = defaultLanguage;
 
     const sourcePack = extractLanguagePack(settings);
     const translations = this.normalizeTranslations(
       settings.translations,
       sourcePack,
+      enabledLanguages,
     );
     const selectedPack = translations[defaultLanguage] || sourcePack;
     applyLanguagePack(settings, selectedPack);
@@ -495,20 +680,28 @@ class ChatbotService {
         this.knowledgeFileRepository.countByChatbot(chatbot.id),
       ]);
 
-      enriched.push({
-        ...chatbot,
-        metrics: {
-          conversationsCount,
-          unreadCount,
-          filesCount,
-        },
-      });
+      enriched.push(
+        this.decorateChatbot(chatbot, {
+          metrics: {
+            conversationsCount,
+            unreadCount,
+            filesCount,
+          },
+        }),
+      );
     }
 
     return enriched;
   }
 
   async create(actor, payload = {}) {
+    const freeTierState = {
+      premiumStatus: 'free',
+      premiumPlan: 'free',
+      premiumCurrentPeriodEnd: null,
+    };
+    this.assertRequestedSettingsAccess(freeTierState, payload.settings || {});
+
     const settings = deepMerge(
       createDefaultChatbotSettings(),
       payload.settings || {},
@@ -518,10 +711,10 @@ class ChatbotService {
     const chatbot = await this.chatbotRepository.create({
       id: createId(),
       ownerUid: actor.uid,
-      settings,
+      settings: this.applyTierAccess(freeTierState, settings),
     });
 
-    return chatbot;
+    return this.decorateChatbot(chatbot);
   }
 
   async getForActor(actor, chatbotId) {
@@ -530,7 +723,7 @@ class ChatbotService {
     if (!canManageOwnerResource(actor, chatbot.ownerUid)) {
       throw new ForbiddenError('Chatbot is not accessible');
     }
-    return chatbot;
+    return this.decorateChatbot(chatbot);
   }
 
   async update(actor, chatbotId, patch = {}) {
@@ -541,7 +734,12 @@ class ChatbotService {
     }
 
     if (patch.settings) {
-      const currentSettings = document.settings.toObject();
+      this.assertRequestedSettingsAccess(document.toObject(), patch.settings);
+
+      const currentSettings = this.applyTierAccess(
+        document.toObject(),
+        document.settings.toObject(),
+      );
       const merged = deepMerge(currentSettings, patch.settings);
       const translatableChanged = this.didTranslatableContentChange(
         currentSettings,
@@ -556,25 +754,39 @@ class ChatbotService {
       );
       const defaultLanguageChanged =
         currentDefaultLanguage !== nextDefaultLanguage;
+      const currentEnabledLanguages = this.normalizeEnabledLanguages(
+        currentSettings.enabledLanguages,
+        currentDefaultLanguage,
+        false,
+      );
+      const nextEnabledLanguages = this.normalizeEnabledLanguages(
+        merged.enabledLanguages,
+        nextDefaultLanguage,
+      );
+      const enabledLanguagesChanged =
+        JSON.stringify(currentEnabledLanguages) !==
+        JSON.stringify(nextEnabledLanguages);
       const sourcePack = extractLanguagePack(merged);
-      const hasCoverage = this.hasLanguageCoverage(merged, sourcePack);
+      merged.enabledLanguages = nextEnabledLanguages;
+      const hasCoverage = this.hasLanguageCoverage(
+        merged,
+        sourcePack,
+        nextEnabledLanguages,
+      );
       const forceTranslate =
-        translatableChanged || (defaultLanguageChanged && !hasCoverage);
+        translatableChanged ||
+        enabledLanguagesChanged ||
+        (defaultLanguageChanged && !hasCoverage);
 
       await this.localizeSettings(merged, {
         forceTranslate,
-        translateIfMissing: defaultLanguageChanged,
+        translateIfMissing: defaultLanguageChanged || enabledLanguagesChanged,
       });
-      if (merged.ai.enabled && !hasPremiumAccess(document.toObject())) {
-        throw new ForbiddenError(
-          'Premium subscription is required to enable AI',
-        );
-      }
-      document.settings = merged;
+      document.settings = this.applyTierAccess(document.toObject(), merged);
     }
 
     await document.save();
-    return document.toObject();
+    return this.decorateChatbot(document.toObject());
   }
 
   async updateLanguage(actor, chatbotId, language, patch = {}) {
@@ -587,12 +799,17 @@ class ChatbotService {
     const normalizedLanguage = this.normalizeDefaultLanguage(language);
     const settings = deepMerge(
       createDefaultChatbotSettings(),
-      document.settings.toObject(),
+      this.applyTierAccess(document.toObject(), document.settings.toObject()),
     );
+    settings.enabledLanguages = this.getEnabledLanguages(settings);
+    if (!settings.enabledLanguages.includes(normalizedLanguage)) {
+      throw new BadRequestError('Language is not enabled for this chatbot');
+    }
     const sourcePack = extractLanguagePack(settings);
     const translations = this.normalizeTranslations(
       settings.translations,
       sourcePack,
+      settings.enabledLanguages,
     );
     const currentPack = normalizeLanguagePack(
       translations[normalizedLanguage],
@@ -625,6 +842,7 @@ class ChatbotService {
     return {
       defaultLanguage: DEFAULT_LANGUAGE,
       allowedLanguages: this.allowedLanguages,
+      minimumSelectedLanguages: 1,
     };
   }
 
@@ -667,7 +885,10 @@ class ChatbotService {
       premiumStatus: chatbot.premiumStatus,
       premiumPlan: chatbot.premiumPlan,
       premiumCurrentPeriodEnd: chatbot.premiumCurrentPeriodEnd,
-      settings: this.buildPublicSettings(chatbot.settings, preferredLanguage),
+      settings: this.buildPublicSettings(
+        this.applyTierAccess(chatbot, chatbot.settings),
+        preferredLanguage,
+      ),
     };
   }
 

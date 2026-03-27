@@ -24,5 +24,12 @@ npm start
    To edit only one translated language without GPT retranslation, use `PATCH /v1/chatbots/:chatbotId/languages/:language`.
 3. Publish it and install it with the snippet from `/v1/chatbots/:chatbotId/install`.
    You can force widget language from website via `?lang=` on embed URL (`/chat/script/:chatbotId?lang=en` or `/chat/iframe/:chatbotId?lang=german`).
-4. Start a chatbot trial with `/v1/subscription/trial` or buy chatbot premium with `/v1/subscription/checkout` (`chatbotId` is required).
-5. Upload `pdf`, `txt`, or `json` files to `/v1/chatbots/:chatbotId/files` (premium/trial chatbot only).
+4. Start a chatbot trial with `/v1/subscription/trial` or buy a chatbot tier with `/v1/subscription/checkout` (`chatbotId` is required, `tierId` supports `auth` and `full` by default).
+5. Upload `pdf`, `txt`, or `json` files to `/v1/chatbots/:chatbotId/files` (`full` tier or trial by default).
+
+### Billing tiers
+
+- `free`: manual chat only, no `authClient`, no AI, no knowledge files.
+- `auth`: `$20/mo`, enables `authClient` conversations without AI.
+- `full`: `$50/mo`, enables `authClient`, AI replies, and knowledge files.
+- You can extend or override tiers with `BILLING_TIER_DEFINITIONS` JSON, and configure default Stripe prices with `STRIPE_AUTH_PRICE_ID` and `STRIPE_FULL_PRICE_ID`.

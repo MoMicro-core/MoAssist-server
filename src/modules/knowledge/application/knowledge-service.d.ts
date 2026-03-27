@@ -1,4 +1,5 @@
 import type { Actor, KnowledgeFile, UploadFile, VectorSearchResult } from '../../../types';
+import type { TierCatalog } from '../../../shared/application/premium';
 import type { ChatbotRepository } from '../../chatbots/infrastructure/chatbot-repository';
 import type { KnowledgeFileRepository } from '../infrastructure/knowledge-file-repository';
 import type { VectorStore } from '../infrastructure/vector-store';
@@ -8,6 +9,7 @@ export class KnowledgeService {
     chatbotRepository: ChatbotRepository;
     knowledgeFileRepository: KnowledgeFileRepository;
     vectorStore: VectorStore;
+    tierCatalog: TierCatalog;
   });
 
   list(actor: Actor, chatbotId: string): Promise<KnowledgeFile[]>;

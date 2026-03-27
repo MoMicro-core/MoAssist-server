@@ -11,7 +11,6 @@ const {
 const {
   ACTIVE_PREMIUM_STATUSES,
   normalizePremiumState,
-  hasPremiumAccess,
 } = require('../../../shared/application/premium');
 
 const DEFAULT_TRIAL_DAYS = 3;
@@ -23,12 +22,14 @@ class BillingService {
     subscriptionRepository,
     stripeGateway,
     config,
+    tierCatalog,
   }) {
     this.userRepository = userRepository;
     this.chatbotRepository = chatbotRepository;
     this.subscriptionRepository = subscriptionRepository;
     this.stripeGateway = stripeGateway;
     this.config = config;
+    this.tierCatalog = tierCatalog;
   }
 
   async ensureCustomer({ customerId, email, uid }) {
@@ -52,6 +53,9 @@ class BillingService {
 
   async normalizeChatbotPremium(chatbot) {
     const normalized = normalizePremiumState(chatbot);
+    const resolvedTier = this.tierCatalog.resolveForState(normalized);
+    normalized.premiumPlan =
+      normalized.premiumStatus === 'free' ? 'free' : resolvedTier.id;
     const currentMs = chatbot.premiumCurrentPeriodEnd
       ? new Date(chatbot.premiumCurrentPeriodEnd).getTime()
       : 0;
@@ -75,6 +79,7 @@ class BillingService {
   async getSummary(actor, payload = {}) {
     const user = await this.userRepository.findByUid(actor.uid);
     if (!user) throw new NotFoundError('User not found');
+    const availableTiers = this.tierCatalog.list();
 
     if (payload.chatbotId) {
       const chatbot = await this.getOwnedChatbot(actor, payload.chatbotId);
@@ -87,6 +92,8 @@ class BillingService {
         premiumStatus: chatbot.premiumStatus,
         premiumPlan: chatbot.premiumPlan,
         premiumCurrentPeriodEnd: chatbot.premiumCurrentPeriodEnd,
+        currentTier: this.tierCatalog.resolveForState(chatbot).toSummary(),
+        availableTiers,
         subscriptions,
       };
     }
@@ -103,6 +110,7 @@ class BillingService {
           premiumStatus: normalized.premiumStatus,
           premiumPlan: normalized.premiumPlan,
           premiumCurrentPeriodEnd: normalized.premiumCurrentPeriodEnd,
+          currentTier: this.tierCatalog.resolveForState(normalized).toSummary(),
           subscriptions,
         };
       }),
@@ -110,6 +118,7 @@ class BillingService {
 
     return {
       customerId: user.stripeCustomerId,
+      availableTiers,
       chatbots: chatbotSummaries,
     };
   }
@@ -119,10 +128,14 @@ class BillingService {
     const owner = await this.userRepository.findByUid(chatbot.ownerUid);
     if (!owner) throw new NotFoundError('User not found');
 
-    const priceId = payload.priceId || this.config.stripe.premiumPriceId || '';
-
-    if (!priceId) {
-      throw new BadRequestError('Stripe premium price id is not configured');
+    const tier = this.tierCatalog.resolveCheckoutTier(payload);
+    if (!tier) {
+      throw new BadRequestError('Requested subscription tier is not available');
+    }
+    if (!tier.stripePriceId) {
+      throw new BadRequestError(
+        `Stripe price id is not configured for tier "${tier.id}"`,
+      );
     }
 
     const subscriptions = await this.subscriptionRepository.listByChatbot(
@@ -146,11 +159,12 @@ class BillingService {
 
     return this.stripeGateway.createCheckoutSession({
       customerId: owner.stripeCustomerId,
-      priceId,
+      priceId: tier.stripePriceId,
       successUrl,
       cancelUrl,
       uid: owner.uid,
       chatbotId: chatbot.id,
+      tierId: tier.id,
     });
   }
 
@@ -189,7 +203,7 @@ class BillingService {
       );
     }
 
-    if (hasPremiumAccess(chatbot)) {
+    if (ACTIVE_PREMIUM_STATUSES.has(chatbot.premiumStatus)) {
       throw new BadRequestError(
         'This chatbot already has an active premium or trial access',
       );
@@ -204,7 +218,11 @@ class BillingService {
     const updated = await this.chatbotRepository.updateById(chatbot.id, {
       $set: {
         premiumStatus: 'trialing',
-        premiumPlan: 'trial',
+        premiumPlan: this.tierCatalog.resolveForState({
+          premiumStatus: 'trialing',
+          premiumPlan: 'trial',
+          premiumCurrentPeriodEnd,
+        }).id,
         premiumCurrentPeriodEnd,
         trialUsedAt: now,
       },
@@ -213,7 +231,13 @@ class BillingService {
     return {
       chatbotId: chatbot.id,
       premiumStatus: updated?.premiumStatus || 'trialing',
-      premiumPlan: updated?.premiumPlan || 'trial',
+      premiumPlan:
+        updated?.premiumPlan ||
+        this.tierCatalog.resolveForState({
+          premiumStatus: 'trialing',
+          premiumPlan: 'trial',
+          premiumCurrentPeriodEnd,
+        }).id,
       premiumCurrentPeriodEnd:
         updated?.premiumCurrentPeriodEnd || premiumCurrentPeriodEnd,
     };
@@ -267,7 +291,17 @@ class BillingService {
       ACTIVE_PREMIUM_STATUSES.has(item.status),
     );
     const premiumStatus = active ? active.status : 'free';
-    const premiumPlan = active?.priceId || 'free';
+    const premiumPlan = active
+      ? (
+          this.tierCatalog.get(active.raw?.metadata?.tierId) ||
+          this.tierCatalog.resolveByPriceId(active.priceId) ||
+          this.tierCatalog.resolveForState({
+            premiumStatus: active.status,
+            premiumPlan: active.priceId,
+            premiumCurrentPeriodEnd: active.currentPeriodEnd,
+          })
+        ).id
+      : 'free';
     const premiumCurrentPeriodEnd = active?.currentPeriodEnd || null;
 
     await this.chatbotRepository.updateById(chatbotId, {

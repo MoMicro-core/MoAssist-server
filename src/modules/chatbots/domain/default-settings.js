@@ -9,6 +9,7 @@ const createDefaultChatbotSettings = () => ({
   auth: false,
   inactivityHours: 3,
   defaultLanguage: 'english',
+  enabledLanguages: ['english'],
   widgetLocation: 'right',
   rounded: true,
   domains: ['*'],

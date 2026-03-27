@@ -2,6 +2,7 @@
 
 const path = require('node:path');
 const { loadDir } = require('../lib/loader');
+const { createTierCatalog } = require('./shared/application/premium');
 
 const getModuleExport = (tree, pathParts, key) => {
   const target = pathParts.reduce((acc, item) => acc[item], tree);
@@ -101,6 +102,7 @@ const createServices = async (fastify) => {
   const knowledgeFileRepository = new KnowledgeFileRepository(
     fastify.mongodb.knowledgeFile,
   );
+  const tierCatalog = createTierCatalog(fastify.config.billing || {});
 
   const billingService = new BillingService({
     userRepository,
@@ -108,6 +110,7 @@ const createServices = async (fastify) => {
     subscriptionRepository,
     stripeGateway: fastify.stripe,
     config: fastify.config,
+    tierCatalog,
   });
 
   const authService = new AuthService({
@@ -124,6 +127,7 @@ const createServices = async (fastify) => {
     knowledgeFileRepository,
     openai: fastify.openai,
     countriesConfig: fastify.config.countries,
+    tierCatalog,
   });
 
   const knowledgeService = new KnowledgeService({
@@ -134,11 +138,13 @@ const createServices = async (fastify) => {
       baseDirectory: path.join(process.cwd(), 'files'),
       binaryPath: path.join(process.cwd(), 'files', '.bin', 'vector-search'),
     }),
+    tierCatalog,
   });
 
   const responderFactory = new ResponderFactory({
     openai: fastify.openai,
     knowledgeService,
+    tierCatalog,
   });
 
   const conversationService = new ConversationService({

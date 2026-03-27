@@ -1,6 +1,6 @@
 'use strict';
 
-const { hasPremiumAccess } = require('../../../shared/application/premium');
+const { TIER_CAPABILITIES } = require('../../../shared/application/premium');
 
 class ManualResponder {
   async respond() {
@@ -52,10 +52,14 @@ class AiResponder {
 class ResponderFactory {
   constructor(dependencies) {
     this.dependencies = dependencies;
+    this.tierCatalog = dependencies.tierCatalog;
   }
 
   create(chatbot) {
-    if (chatbot.settings.ai.enabled && hasPremiumAccess(chatbot)) {
+    if (
+      chatbot.settings.ai.enabled &&
+      this.tierCatalog.hasCapability(chatbot, TIER_CAPABILITIES.AI_RESPONDER)
+    ) {
       return new AiResponder(this.dependencies);
     }
     return new ManualResponder();

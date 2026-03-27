@@ -35,6 +35,7 @@ module.exports = ({ services }) => [
           chatbotId: { type: 'string' },
           successUrl: { type: 'string' },
           cancelUrl: { type: 'string' },
+          tierId: { type: 'string' },
           priceId: { type: 'string' },
         },
       },

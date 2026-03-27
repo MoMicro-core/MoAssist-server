@@ -9,6 +9,7 @@ export type PremiumStatus =
   | 'trialing'
   | 'past_due'
   | 'canceled';
+export type BillingTierCapability = string;
 export type ChatbotStatus = 'draft' | 'published';
 export type WidgetLocation = 'left' | 'right';
 export type ResponseLength = 'short' | 'medium' | 'long';
@@ -90,6 +91,28 @@ export interface ChatbotThemeVariant {
 export interface ChatbotTheme {
   light: ChatbotThemeVariant;
   dark: ChatbotThemeVariant;
+}
+
+export interface BillingTierConfig {
+  id: string;
+  name: string;
+  monthlyPriceUsd: number;
+  stripePriceId?: string;
+  checkoutEnabled?: boolean;
+  capabilities?: BillingTierCapability[];
+  limits?: Record<string, number>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface BillingTierSummary {
+  id: string;
+  name: string;
+  monthlyPriceUsd: number;
+  checkoutEnabled: boolean;
+  stripePriceConfigured: boolean;
+  capabilities: BillingTierCapability[];
+  limits: Record<string, number>;
+  metadata: Record<string, unknown>;
 }
 
 export interface ChatbotLanguagePack {
@@ -273,6 +296,11 @@ export interface AppConfig {
     appUrl?: string;
     productName?: string;
   };
+  billing: {
+    trialTierId?: string;
+    defaultCheckoutTierId?: string;
+    tiers: BillingTierConfig[];
+  };
   stripe: {
     secretKey?: string;
     webhookSecret?: string;
@@ -335,6 +363,7 @@ export interface StripeGateway {
     cancelUrl: string;
     uid: string;
     chatbotId: string;
+    tierId: string;
   }): Promise<{ id: string; url: string | null }>;
   createPortalSession(args: {
     customerId: string;

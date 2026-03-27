@@ -1,7 +1,15 @@
-import type { Actor, AppConfig, PremiumStatus, StripeGateway, Subscription } from '../../../types';
+import type {
+  Actor,
+  AppConfig,
+  BillingTierSummary,
+  PremiumStatus,
+  StripeGateway,
+  Subscription,
+} from '../../../types';
 import type { ChatbotRepository } from '../../chatbots/infrastructure/chatbot-repository';
 import type { UserRepository } from '../../auth/infrastructure/user-repository';
 import type { SubscriptionRepository } from '../infrastructure/subscription-repository';
+import type { TierCatalog } from '../../../shared/application/premium';
 
 export class BillingService {
   constructor(args: {
@@ -10,6 +18,7 @@ export class BillingService {
     subscriptionRepository: SubscriptionRepository;
     stripeGateway: StripeGateway;
     config: AppConfig;
+    tierCatalog: TierCatalog;
   });
 
   ensureCustomer(args: {
@@ -28,15 +37,19 @@ export class BillingService {
         premiumStatus: PremiumStatus;
         premiumPlan: string;
         premiumCurrentPeriodEnd: Date | null;
+        currentTier: BillingTierSummary;
+        availableTiers: BillingTierSummary[];
         subscriptions: Subscription[];
       }
     | {
         customerId: string;
+        availableTiers: BillingTierSummary[];
         chatbots: Array<{
           chatbotId: string;
           premiumStatus: PremiumStatus;
           premiumPlan: string;
           premiumCurrentPeriodEnd: Date | null;
+          currentTier: BillingTierSummary;
           subscriptions: Subscription[];
         }>;
       }
@@ -46,6 +59,7 @@ export class BillingService {
     actor: Actor,
     payload?: {
       chatbotId?: string;
+      tierId?: string;
       priceId?: string;
       successUrl?: string;
       cancelUrl?: string;

@@ -9,15 +9,21 @@ const {
 const {
   canManageOwnerResource,
 } = require('../../../shared/application/permissions');
-const { hasPremiumAccess } = require('../../../shared/application/premium');
+const { TIER_CAPABILITIES } = require('../../../shared/application/premium');
 const { createId } = require('../../../shared/application/ids');
 const { extractTextFromBuffer } = require('../infrastructure/text-extractor');
 
 class KnowledgeService {
-  constructor({ chatbotRepository, knowledgeFileRepository, vectorStore }) {
+  constructor({
+    chatbotRepository,
+    knowledgeFileRepository,
+    vectorStore,
+    tierCatalog,
+  }) {
     this.chatbotRepository = chatbotRepository;
     this.knowledgeFileRepository = knowledgeFileRepository;
     this.vectorStore = vectorStore;
+    this.tierCatalog = tierCatalog;
   }
 
   async list(actor, chatbotId) {
@@ -35,10 +41,13 @@ class KnowledgeService {
     if (!canManageOwnerResource(actor, chatbot.ownerUid)) {
       throw new ForbiddenError('Chatbot is not accessible');
     }
-    if (!hasPremiumAccess(chatbot)) {
-      throw new ForbiddenError(
-        'Premium subscription is required to upload files',
-      );
+    if (
+      !this.tierCatalog.hasCapability(
+        chatbot,
+        TIER_CAPABILITIES.KNOWLEDGE_FILES,
+      )
+    ) {
+      throw new ForbiddenError('Current tier does not allow knowledge files');
     }
     if (!Array.isArray(files) || files.length === 0) {
       throw new BadRequestError('At least one file is required');

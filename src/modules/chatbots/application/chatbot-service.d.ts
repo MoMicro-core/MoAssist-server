@@ -7,6 +7,7 @@ import type {
   OpenAIGateway,
   PublicChatbot,
 } from '../../../types';
+import type { TierCatalog } from '../../../shared/application/premium';
 import type { ConversationRepository } from '../../conversations/infrastructure/conversation-repository';
 import type { WidgetSessionRepository } from '../../conversations/infrastructure/widget-session-repository';
 import type { KnowledgeFileRepository } from '../../knowledge/infrastructure/knowledge-file-repository';
@@ -22,6 +23,7 @@ export class ChatbotService {
     knowledgeFileRepository: KnowledgeFileRepository;
     openai: OpenAIGateway;
     countriesConfig: AppConfig['countries'];
+    tierCatalog: TierCatalog;
   });
 
   list(actor: Actor): Promise<ChatbotWithMetrics[]>;

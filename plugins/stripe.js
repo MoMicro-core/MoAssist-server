@@ -43,6 +43,7 @@ class StripeGateway {
     cancelUrl,
     uid,
     chatbotId,
+    tierId,
   }) {
     this.assertConfigured();
     const payload = {
@@ -58,7 +59,7 @@ class StripeGateway {
       },
     ];
     payload['subscription_data'] = {
-      metadata: { uid, chatbotId },
+      metadata: { uid, chatbotId, tierId },
     };
     payload['allow_promotion_codes'] = true;
     const session = await this.client.checkout.sessions.create(payload);
