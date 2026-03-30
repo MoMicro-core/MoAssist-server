@@ -61,7 +61,6 @@ module.exports = {
     AT: { language: 'german', currency: 'EUR' },
     ES: { language: 'spanish', currency: 'EUR' },
     FR: { language: 'french', currency: 'EUR' },
-    GR: { language: 'greek', currency: 'EUR' },
     IT: { language: 'italian', currency: 'EUR' },
     RU: { language: 'russian', currency: 'EUR' },
     UA: { language: 'ukrainian', currency: 'EUR' },
