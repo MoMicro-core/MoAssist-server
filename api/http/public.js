@@ -183,6 +183,9 @@ module.exports = ({ services, fastify }) => [
       },
     },
     handler: async (request, reply) => {
+      await services.chatbotService.assertDashboardInstallAccess(
+        request.params.chatbotId,
+      );
       const baseUrl = getBaseUrl(request, fastify.config.environment.appUrl);
       reply.type('application/javascript');
       return services.embedService.renderDashboardScript({
@@ -206,6 +209,9 @@ module.exports = ({ services, fastify }) => [
       },
     },
     handler: async (request, reply) => {
+      await services.chatbotService.assertDashboardInstallAccess(
+        request.params.chatbotId,
+      );
       const baseUrl = getBaseUrl(request, fastify.config.environment.appUrl);
       reply.type('text/html');
       return services.embedService.renderDashboardIframe({

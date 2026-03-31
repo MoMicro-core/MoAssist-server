@@ -314,6 +314,12 @@ class ChatbotService {
     };
   }
 
+  canUseDashboardInstall(chatbot = {}) {
+    return this.getTierPolicy(chatbot).hasCapability(
+      TIER_CAPABILITIES.AUTHENTICATED_WIDGET,
+    );
+  }
+
   decorateChatbot(chatbot = {}, extras = {}) {
     const plain =
       typeof chatbot?.toObject === 'function' ? chatbot.toObject() : chatbot;
@@ -902,18 +908,36 @@ class ChatbotService {
       chatbot.settings?.defaultLanguage,
       false,
     );
+    const dashboardInstallEnabled =
+      chatbot.featureAccess?.authenticatedWidget === true;
 
     return {
       chatbotId: chatbot.id,
       scriptUrl,
       iframeUrl,
-      dashboardScriptUrl,
-      dashboardIframeUrl,
+      dashboardInstallEnabled,
+      dashboardScriptUrl: dashboardInstallEnabled ? dashboardScriptUrl : '',
+      dashboardIframeUrl: dashboardInstallEnabled ? dashboardIframeUrl : '',
       scriptSnippet: `<script src="${scriptUrl}?lang=${installLanguage}" defer></script>`,
       iframeSnippet: `<iframe src="${iframeUrl}?lang=${installLanguage}" title="${chatbot.settings.botName}" style="width:420px;height:680px;border:0;"></iframe>`,
-      dashboardScriptSnippet: `<script>window.MOMICRO_ASSIST_DASHBOARD_CONFIG = window.MOMICRO_ASSIST_DASHBOARD_CONFIG || {}; window.MOMICRO_ASSIST_DASHBOARD_CONFIG["${chatbot.id}"] = { sessionToken: "YOUR_SESSION_TOKEN", selector: "#momicro-dashboard-root", height: "760px" };</script>\n<script src="${dashboardScriptUrl}" defer></script>`,
-      dashboardIframeSnippet: `<iframe src="${dashboardIframeUrl}?sessionToken=YOUR_SESSION_TOKEN" title="${chatbot.settings.botName} Dashboard" style="width:100%;height:760px;border:0;border-radius:24px;"></iframe>`,
+      dashboardScriptSnippet: dashboardInstallEnabled
+        ? `<script>window.MOMICRO_ASSIST_DASHBOARD_CONFIG = window.MOMICRO_ASSIST_DASHBOARD_CONFIG || {}; window.MOMICRO_ASSIST_DASHBOARD_CONFIG["${chatbot.id}"] = { sessionToken: "YOUR_SESSION_TOKEN", selector: "#momicro-dashboard-root", height: "760px" };</script>\n<script src="${dashboardScriptUrl}" defer></script>`
+        : '',
+      dashboardIframeSnippet: dashboardInstallEnabled
+        ? `<iframe src="${dashboardIframeUrl}?sessionToken=YOUR_SESSION_TOKEN" title="${chatbot.settings.botName} Dashboard" style="width:100%;height:760px;border:0;border-radius:24px;"></iframe>`
+        : '',
     };
+  }
+
+  async assertDashboardInstallAccess(chatbotId) {
+    const chatbot = await this.chatbotRepository.findById(chatbotId);
+    if (!chatbot) throw new NotFoundError('Chatbot not found');
+    if (!this.canUseDashboardInstall(chatbot)) {
+      throw new ForbiddenError(
+        'Current tier does not allow dashboard installation',
+      );
+    }
+    return chatbot;
   }
 
   async getAnalytics(actor, chatbotId) {

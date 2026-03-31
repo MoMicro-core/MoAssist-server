@@ -120,4 +120,60 @@ describe('billing tiers', () => {
       expect.arrayContaining(['free', 'auth', 'full']),
     );
   });
+
+  test('trial creates a Stripe checkout session with a seven day trial by default', async () => {
+    const config = createConfig();
+    const tierCatalog = createTierCatalog(config);
+    const stripeGateway = {
+      createCheckoutSession: jest.fn(async () => ({
+        id: 'cs_trial_123',
+        url: 'https://stripe.test/trial-session',
+      })),
+    };
+    const service = new BillingService({
+      userRepository: {
+        findByUid: jest.fn(async () => ({
+          uid: 'owner-1',
+          stripeCustomerId: 'cus_123',
+        })),
+      },
+      chatbotRepository: {
+        findById: jest.fn(async () => ({
+          id: 'cb-1',
+          ownerUid: 'owner-1',
+          premiumStatus: 'free',
+          premiumPlan: 'free',
+          premiumCurrentPeriodEnd: null,
+          trialUsedAt: null,
+        })),
+        updateById: jest.fn(),
+      },
+      subscriptionRepository: {
+        listByChatbot: jest.fn(async () => []),
+      },
+      stripeGateway,
+      config: {
+        environment: {
+          appUrl: 'http://localhost:8080',
+        },
+        trialDays: 7,
+      },
+      tierCatalog,
+    });
+
+    await service.startTrial(
+      { uid: 'owner-1', role: 'user' },
+      {
+        chatbotId: 'cb-1',
+      },
+    );
+
+    expect(stripeGateway.createCheckoutSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        priceId: 'price_full_50',
+        tierId: 'full',
+        trialDays: 7,
+      }),
+    );
+  });
 });

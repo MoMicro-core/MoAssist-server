@@ -1,5 +1,11 @@
 'use strict';
 
+const normalizeTrialDays = (value, fallback = 7) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(30, Math.max(1, Math.trunc(numeric)));
+};
+
 const DEFAULT_BILLING_TIERS = Object.freeze([
   {
     id: 'free',
@@ -144,6 +150,7 @@ const mergeTierDefinitions = (defaults, overrides = []) => {
 };
 
 module.exports = {
+  trialDays: normalizeTrialDays(process.env.BILLING_TRIAL_DAYS, 7),
   trialTierId: process.env.BILLING_TRIAL_TIER_ID || 'full',
   defaultCheckoutTierId: process.env.BILLING_DEFAULT_CHECKOUT_TIER_ID || 'full',
   tiers: mergeTierDefinitions(

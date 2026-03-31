@@ -13,7 +13,7 @@ const {
   normalizePremiumState,
 } = require('../../../shared/application/premium');
 
-const DEFAULT_TRIAL_DAYS = 3;
+const DEFAULT_TRIAL_DAYS = 7;
 
 class BillingService {
   constructor({
@@ -124,48 +124,11 @@ class BillingService {
   }
 
   async createCheckoutSession(actor, payload = {}) {
-    const chatbot = await this.getOwnedChatbot(actor, payload.chatbotId);
-    const owner = await this.userRepository.findByUid(chatbot.ownerUid);
-    if (!owner) throw new NotFoundError('User not found');
-
-    const tier = this.tierCatalog.resolveCheckoutTier(payload);
-    if (!tier) {
-      throw new BadRequestError('Requested subscription tier is not available');
-    }
-    if (!tier.stripePriceId) {
-      throw new BadRequestError(
-        `Stripe price id is not configured for tier "${tier.id}"`,
-      );
-    }
-
-    const subscriptions = await this.subscriptionRepository.listByChatbot(
-      chatbot.id,
-    );
-    const activeSubscription = subscriptions.find((item) =>
-      ACTIVE_PREMIUM_STATUSES.has(item.status),
-    );
-
-    if (activeSubscription) {
-      throw new BadRequestError(
-        'This chatbot already has an active subscription',
-      );
-    }
-
-    const baseUrl = this.config.environment.appUrl || 'http://localhost:8080';
-    const successUrl =
-      payload.successUrl || `${baseUrl}/static/auth.html?billing=success`;
-    const cancelUrl =
-      payload.cancelUrl || `${baseUrl}/static/auth.html?billing=cancel`;
-
-    return this.stripeGateway.createCheckoutSession({
-      customerId: owner.stripeCustomerId,
-      priceId: tier.stripePriceId,
-      successUrl,
-      cancelUrl,
-      uid: owner.uid,
-      chatbotId: chatbot.id,
-      tierId: tier.id,
+    const prepared = await this.prepareCheckout(actor, payload, {
+      trial: false,
     });
+
+    return this.stripeGateway.createCheckoutSession(prepared);
   }
 
   async createPortalSession(actor, payload = {}) {
@@ -192,55 +155,13 @@ class BillingService {
   }
 
   async startTrial(actor, payload = {}) {
-    const chatbot = await this.getOwnedChatbot(actor, payload.chatbotId);
-    const subscriptions = await this.subscriptionRepository.listByChatbot(
-      chatbot.id,
-    );
-
-    if (chatbot.trialUsedAt || subscriptions.length > 0) {
-      throw new BadRequestError(
-        'Trial is not available for this chatbot anymore',
-      );
-    }
-
-    if (ACTIVE_PREMIUM_STATUSES.has(chatbot.premiumStatus)) {
-      throw new BadRequestError(
-        'This chatbot already has an active premium or trial access',
-      );
-    }
-
-    const trialDays = DEFAULT_TRIAL_DAYS;
-    const now = new Date();
-    const premiumCurrentPeriodEnd = new Date(
-      now.getTime() + trialDays * 24 * 60 * 60 * 1000,
-    );
-
-    const updated = await this.chatbotRepository.updateById(chatbot.id, {
-      $set: {
-        premiumStatus: 'trialing',
-        premiumPlan: this.tierCatalog.resolveForState({
-          premiumStatus: 'trialing',
-          premiumPlan: 'trial',
-          premiumCurrentPeriodEnd,
-        }).id,
-        premiumCurrentPeriodEnd,
-        trialUsedAt: now,
-      },
+    const trialDays = this.resolveTrialDays(payload.trialDays);
+    const prepared = await this.prepareCheckout(actor, payload, {
+      trial: true,
+      trialDays,
     });
 
-    return {
-      chatbotId: chatbot.id,
-      premiumStatus: updated?.premiumStatus || 'trialing',
-      premiumPlan:
-        updated?.premiumPlan ||
-        this.tierCatalog.resolveForState({
-          premiumStatus: 'trialing',
-          premiumPlan: 'trial',
-          premiumCurrentPeriodEnd,
-        }).id,
-      premiumCurrentPeriodEnd:
-        updated?.premiumCurrentPeriodEnd || premiumCurrentPeriodEnd,
-    };
+    return this.stripeGateway.createCheckoutSession(prepared);
   }
 
   async handleWebhook(rawBody, signature) {
@@ -279,38 +200,134 @@ class BillingService {
       chatbotId,
       subscription,
     );
-    await this.syncPremiumState(chatbotId);
+    await this.syncPremiumState(chatbotId, chatbot);
 
     return { received: true };
   }
 
-  async syncPremiumState(chatbotId) {
+  async syncPremiumState(chatbotId, chatbot = null) {
+    let currentChatbot = chatbot;
+    if (!currentChatbot) {
+      currentChatbot = await this.chatbotRepository.findById(chatbotId);
+    }
+    if (!currentChatbot) return;
     const subscriptions =
       await this.subscriptionRepository.listByChatbot(chatbotId);
     const active = subscriptions.find((item) =>
       ACTIVE_PREMIUM_STATUSES.has(item.status),
     );
     const premiumStatus = active ? active.status : 'free';
-    const premiumPlan = active
-      ? (
-          this.tierCatalog.get(active.raw?.metadata?.tierId) ||
-          this.tierCatalog.resolveByPriceId(active.priceId) ||
-          this.tierCatalog.resolveForState({
-            premiumStatus: active.status,
-            premiumPlan: active.priceId,
-            premiumCurrentPeriodEnd: active.currentPeriodEnd,
-          })
-        ).id
-      : 'free';
+    let premiumPlan = 'free';
+    if (active) {
+      premiumPlan = (
+        this.tierCatalog.get(active.raw?.metadata?.tierId) ||
+        this.tierCatalog.resolveByPriceId(active.priceId) ||
+        this.tierCatalog.resolveForState({
+          premiumStatus: active.status,
+          premiumPlan: active.priceId,
+          premiumCurrentPeriodEnd: active.currentPeriodEnd,
+        })
+      ).id;
+    }
     const premiumCurrentPeriodEnd = active?.currentPeriodEnd || null;
+    let trialUsedAt = currentChatbot.trialUsedAt || null;
+    if (!trialUsedAt && active?.status === 'trialing') {
+      trialUsedAt = active?.raw?.trial_start
+        ? new Date(active.raw.trial_start * 1000)
+        : new Date();
+    }
+
+    const nextState = {
+      premiumStatus,
+      premiumPlan,
+      premiumCurrentPeriodEnd,
+    };
+
+    if (trialUsedAt && !currentChatbot.trialUsedAt) {
+      nextState.trialUsedAt = trialUsedAt;
+    }
 
     await this.chatbotRepository.updateById(chatbotId, {
-      $set: {
-        premiumStatus,
-        premiumPlan,
-        premiumCurrentPeriodEnd,
-      },
+      $set: nextState,
     });
+  }
+
+  resolveTrialDays(trialDays) {
+    const configured = Number(this.config.trialDays || DEFAULT_TRIAL_DAYS);
+    const fallback = Number.isFinite(configured)
+      ? Math.min(30, Math.max(1, Math.trunc(configured)))
+      : DEFAULT_TRIAL_DAYS;
+    const requested = Number(trialDays);
+    if (!Number.isFinite(requested)) return fallback;
+    return Math.min(30, Math.max(1, Math.trunc(requested)));
+  }
+
+  async prepareCheckout(
+    actor,
+    payload = {},
+    { trial = false, trialDays = 0 } = {},
+  ) {
+    const chatbot = await this.getOwnedChatbot(actor, payload.chatbotId);
+    const owner = await this.userRepository.findByUid(chatbot.ownerUid);
+    if (!owner) throw new NotFoundError('User not found');
+
+    const tier = trial
+      ? this.tierCatalog.resolveTrialTier(payload)
+      : this.tierCatalog.resolveCheckoutTier(payload);
+    if (!tier) {
+      throw new BadRequestError(
+        trial
+          ? 'Requested trial tier is not available'
+          : 'Requested subscription tier is not available',
+      );
+    }
+    if (!tier.stripePriceId) {
+      throw new BadRequestError(
+        `Stripe price id is not configured for tier "${tier.id}"`,
+      );
+    }
+
+    const subscriptions = await this.subscriptionRepository.listByChatbot(
+      chatbot.id,
+    );
+    const activeSubscription = subscriptions.find((item) =>
+      ACTIVE_PREMIUM_STATUSES.has(item.status),
+    );
+
+    if (trial) {
+      if (chatbot.trialUsedAt || subscriptions.length > 0) {
+        throw new BadRequestError(
+          'Trial is not available for this chatbot anymore',
+        );
+      }
+
+      if (ACTIVE_PREMIUM_STATUSES.has(chatbot.premiumStatus)) {
+        throw new BadRequestError(
+          'This chatbot already has an active premium or trial access',
+        );
+      }
+    } else if (activeSubscription) {
+      throw new BadRequestError(
+        'This chatbot already has an active subscription',
+      );
+    }
+
+    const baseUrl = this.config.environment.appUrl || 'http://localhost:8080';
+    const successUrl =
+      payload.successUrl || `${baseUrl}/static/auth.html?billing=success`;
+    const cancelUrl =
+      payload.cancelUrl || `${baseUrl}/static/auth.html?billing=cancel`;
+
+    return {
+      customerId: owner.stripeCustomerId,
+      priceId: tier.stripePriceId,
+      successUrl,
+      cancelUrl,
+      uid: owner.uid,
+      chatbotId: chatbot.id,
+      tierId: tier.id,
+      trialDays: trial ? trialDays : 0,
+    };
   }
 }
 

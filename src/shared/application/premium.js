@@ -174,6 +174,13 @@ class TierCatalog {
     );
   }
 
+  getTrialTier() {
+    const configured = this.get(this.trialTierId);
+    if (configured && configured.checkoutEnabled) return configured;
+    const fallback = this.resolvePaidFallback();
+    return fallback && fallback.checkoutEnabled ? fallback : this.freePolicy;
+  }
+
   resolveForState(value = {}) {
     const normalized = normalizePremiumState(value);
     if (!ACTIVE_PREMIUM_STATUSES.has(normalized.premiumStatus)) {
@@ -181,7 +188,7 @@ class TierCatalog {
     }
 
     if (normalized.premiumStatus === 'trialing') {
-      return this.get(this.trialTierId) || this.resolvePaidFallback();
+      return this.getTrialTier();
     }
 
     const direct =
@@ -207,6 +214,15 @@ class TierCatalog {
 
     const fallback = this.get(this.defaultCheckoutTierId);
     return fallback && fallback.checkoutEnabled ? fallback : null;
+  }
+
+  resolveTrialTier({ tierId = '', priceId = '' } = {}) {
+    if (tierId || priceId) {
+      return this.resolveCheckoutTier({ tierId, priceId });
+    }
+
+    const tier = this.getTrialTier();
+    return tier && tier.checkoutEnabled ? tier : null;
   }
 
   hasCapability(value = {}, capability) {

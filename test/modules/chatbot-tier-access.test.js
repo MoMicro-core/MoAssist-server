@@ -181,6 +181,62 @@ describe('chatbot tier access', () => {
     expect(updated.settings.ai.enabled).toBe(false);
   });
 
+  test('install payload hides admin dashboard embed on free tier', async () => {
+    const settings = createDefaultChatbotSettings();
+    const service = createService({
+      chatbotRepository: {
+        findById: jest.fn(async () => ({
+          id: 'cb-free-install',
+          ownerUid: 'owner-1',
+          premiumStatus: 'free',
+          premiumPlan: 'free',
+          premiumCurrentPeriodEnd: null,
+          settings,
+        })),
+      },
+    });
+
+    const install = await service.getInstallCode(
+      { uid: 'owner-1', role: 'user' },
+      'cb-free-install',
+      'https://api.test',
+    );
+
+    expect(install.dashboardInstallEnabled).toBe(false);
+    expect(install.dashboardScriptSnippet).toBe('');
+    expect(install.dashboardIframeSnippet).toBe('');
+  });
+
+  test('install payload exposes admin dashboard embed on auth tier', async () => {
+    const settings = createDefaultChatbotSettings();
+    const service = createService({
+      chatbotRepository: {
+        findById: jest.fn(async () => ({
+          id: 'cb-auth-install',
+          ownerUid: 'owner-1',
+          premiumStatus: 'active',
+          premiumPlan: 'auth',
+          premiumCurrentPeriodEnd: null,
+          settings,
+        })),
+      },
+    });
+
+    const install = await service.getInstallCode(
+      { uid: 'owner-1', role: 'user' },
+      'cb-auth-install',
+      'https://api.test',
+    );
+
+    expect(install.dashboardInstallEnabled).toBe(true);
+    expect(install.dashboardScriptSnippet).toContain(
+      '/chat/dashboard/script/cb-auth-install',
+    );
+    expect(install.dashboardIframeSnippet).toContain(
+      '/chat/dashboard/iframe/cb-auth-install',
+    );
+  });
+
   test('chatbot creation keeps only selected languages', async () => {
     const service = createService({
       chatbotRepository: {

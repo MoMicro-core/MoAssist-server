@@ -44,6 +44,7 @@ class StripeGateway {
     uid,
     chatbotId,
     tierId,
+    trialDays,
   }) {
     this.assertConfigured();
     const payload = {
@@ -61,6 +62,9 @@ class StripeGateway {
     payload['subscription_data'] = {
       metadata: { uid, chatbotId, tierId },
     };
+    if (Number.isFinite(trialDays) && trialDays > 0) {
+      payload.subscription_data['trial_period_days'] = Math.trunc(trialDays);
+    }
     payload['allow_promotion_codes'] = true;
     const session = await this.client.checkout.sessions.create(payload);
 
