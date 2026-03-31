@@ -53,7 +53,6 @@ module.exports = ({ services }) => [
         type: 'object',
         properties: {
           name: { type: 'string' },
-          photoUrl: { type: 'string' },
         },
       },
     },

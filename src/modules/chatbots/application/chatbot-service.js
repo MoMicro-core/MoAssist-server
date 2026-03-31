@@ -175,6 +175,38 @@ const createLanguageHash = (language, content) =>
 
 const DEFAULT_INACTIVITY_HOURS = 3;
 const MAX_INACTIVITY_HOURS = 24;
+const MAX_LOGO_FILE_SIZE = 10 * 1024 * 1024;
+const IMAGE_EXTENSIONS_BY_MIME = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/webp': 'webp',
+  'image/svg+xml': 'svg',
+};
+
+const normalizeMimeType = (value = '') =>
+  String(value || '')
+    .trim()
+    .toLowerCase();
+
+const normalizeBrandValue = (value = '') =>
+  typeof value === 'string' ? value.trim() : '';
+
+const resolveImageExtension = (fileName = '', mimeType = '') => {
+  const normalizedMime = normalizeMimeType(mimeType);
+  if (IMAGE_EXTENSIONS_BY_MIME[normalizedMime]) {
+    return IMAGE_EXTENSIONS_BY_MIME[normalizedMime];
+  }
+
+  const extension = path
+    .extname(String(fileName || ''))
+    .replace(/^\./, '')
+    .toLowerCase();
+
+  if (extension === 'jpeg') return 'jpg';
+  if (['png', 'jpg', 'webp', 'svg'].includes(extension)) return extension;
+  return '';
+};
 
 const validateLanguagePatch = (patch = {}, sourcePack = {}) => {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
@@ -286,6 +318,7 @@ class ChatbotService {
     widgetSessionRepository,
     knowledgeFileRepository,
     openai,
+    brandingStorage,
     countriesConfig,
     tierCatalog,
   }) {
@@ -294,6 +327,7 @@ class ChatbotService {
     this.widgetSessionRepository = widgetSessionRepository;
     this.knowledgeFileRepository = knowledgeFileRepository;
     this.openai = openai;
+    this.brandingStorage = brandingStorage;
     this.allowedLanguages = collectAllowedLanguages(countriesConfig || {});
     this.tierCatalog = tierCatalog;
   }
@@ -311,6 +345,7 @@ class ChatbotService {
       ),
       aiResponder: tier.hasCapability(TIER_CAPABILITIES.AI_RESPONDER),
       knowledgeFiles: tier.hasCapability(TIER_CAPABILITIES.KNOWLEDGE_FILES),
+      customBranding: tier.hasCapability(TIER_CAPABILITIES.CUSTOM_BRANDING),
     };
   }
 
@@ -332,6 +367,19 @@ class ChatbotService {
     };
   }
 
+  hasCustomBranding(chatbot = {}) {
+    return this.getTierPolicy(chatbot).hasCapability(
+      TIER_CAPABILITIES.CUSTOM_BRANDING,
+    );
+  }
+
+  requiresCustomBranding(requestedBrand = {}) {
+    return Boolean(
+      normalizeBrandValue(requestedBrand.logoUrl) ||
+        normalizeBrandValue(requestedBrand.logoBackgroundColor),
+    );
+  }
+
   assertRequestedSettingsAccess(chatbot, requestedSettings = {}) {
     const tier = this.getTierPolicy(chatbot);
 
@@ -346,6 +394,13 @@ class ChatbotService {
       tier.assertCapability(
         TIER_CAPABILITIES.AI_RESPONDER,
         'Current tier does not allow AI responses',
+      );
+    }
+
+    if (this.requiresCustomBranding(requestedSettings.brand)) {
+      tier.assertCapability(
+        TIER_CAPABILITIES.CUSTOM_BRANDING,
+        'Current tier does not allow custom chatbot branding',
       );
     }
   }
@@ -366,7 +421,72 @@ class ChatbotService {
       };
     }
 
+    if (!tier.hasCapability(TIER_CAPABILITIES.CUSTOM_BRANDING)) {
+      nextSettings.brand = {
+        ...nextSettings.brand,
+        logoUrl: '',
+        logoBackgroundColor: '',
+      };
+    }
+
     return nextSettings;
+  }
+
+  async getManageableDocument(actor, chatbotId) {
+    const document = await this.chatbotRepository.findDocumentById(chatbotId);
+    if (!document) throw new NotFoundError('Chatbot not found');
+    if (!canManageOwnerResource(actor, document.ownerUid)) {
+      throw new ForbiddenError('Chatbot is not accessible');
+    }
+    return document;
+  }
+
+  async uploadLogo(actor, chatbotId, file = {}) {
+    const document = await this.getManageableDocument(actor, chatbotId);
+    const tier = this.getTierPolicy(document.toObject());
+    tier.assertCapability(
+      TIER_CAPABILITIES.CUSTOM_BRANDING,
+      'Current tier does not allow custom chatbot branding',
+    );
+
+    const fileName = String(file.fileName || '').trim();
+    const mimeType = normalizeMimeType(file.mimeType);
+    const buffer = file.buffer;
+
+    if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
+      throw new BadRequestError('Logo file is required');
+    }
+
+    if (buffer.length > MAX_LOGO_FILE_SIZE) {
+      throw new BadRequestError('Logo file must be 10 MB or smaller');
+    }
+
+    const extension = resolveImageExtension(fileName, mimeType);
+    if (!extension) {
+      throw new BadRequestError('Logo file must be PNG, JPG, WEBP, or SVG');
+    }
+
+    const objectPath = `chatbots/${chatbotId}/branding/logo-${Date.now()}-${createId()}.${extension}`;
+    const uploaded = await this.brandingStorage.uploadPublicObject({
+      objectPath,
+      buffer,
+      mimeType: mimeType || 'application/octet-stream',
+    });
+
+    const currentSettings = this.applyTierAccess(
+      document.toObject(),
+      document.settings.toObject(),
+    );
+    document.settings = this.applyTierAccess(document.toObject(), {
+      ...currentSettings,
+      brand: {
+        ...currentSettings.brand,
+        logoUrl: uploaded.publicUrl,
+      },
+    });
+
+    await document.save();
+    return this.decorateChatbot(document.toObject());
   }
 
   normalizeConversationSettings(settings = {}, strict = true) {
@@ -733,11 +853,7 @@ class ChatbotService {
   }
 
   async update(actor, chatbotId, patch = {}) {
-    const document = await this.chatbotRepository.findDocumentById(chatbotId);
-    if (!document) throw new NotFoundError('Chatbot not found');
-    if (!canManageOwnerResource(actor, document.ownerUid)) {
-      throw new ForbiddenError('Chatbot is not accessible');
-    }
+    const document = await this.getManageableDocument(actor, chatbotId);
 
     if (patch.settings) {
       this.assertRequestedSettingsAccess(document.toObject(), patch.settings);
@@ -796,11 +912,7 @@ class ChatbotService {
   }
 
   async updateLanguage(actor, chatbotId, language, patch = {}) {
-    const document = await this.chatbotRepository.findDocumentById(chatbotId);
-    if (!document) throw new NotFoundError('Chatbot not found');
-    if (!canManageOwnerResource(actor, document.ownerUid)) {
-      throw new ForbiddenError('Chatbot is not accessible');
-    }
+    const document = await this.getManageableDocument(actor, chatbotId);
 
     const normalizedLanguage = this.normalizeDefaultLanguage(language);
     const settings = deepMerge(

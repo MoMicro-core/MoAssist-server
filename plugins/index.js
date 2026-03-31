@@ -15,6 +15,7 @@ const corePlugins = [
   'client',
   'request-context',
   'openai',
+  'supabase',
   'stripe',
 ];
 

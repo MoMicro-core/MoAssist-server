@@ -81,6 +81,7 @@ module.exports = {
       },
       brand: {
         logoUrl: { type: String, default: '' },
+        logoBackgroundColor: { type: String, default: '' },
         bubbleIconUrl: { type: String, default: '' },
       },
       theme: {

@@ -93,6 +93,7 @@ class EmbedService {
       --surface: ${chatbot.settings.theme.light.surfaceColor};
       --text: ${chatbot.settings.theme.light.textColor};
       --border: ${chatbot.settings.theme.light.borderColor};
+      --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || chatbot.settings.theme.light.surfaceColor};
     }
     * { box-sizing: border-box; }
     body {
@@ -117,6 +118,36 @@ class EmbedService {
       align-items: flex-start;
       justify-content: space-between;
       gap: 12px;
+    }
+    .brand-lockup {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .brand-mark {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      flex: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: var(--logo-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .brand-mark img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      padding: 6px;
+    }
+    .brand-copy {
+      min-width: 0;
     }
     .title { margin: 0; font-size: 16px; font-weight: 700; }
     .subtitle { margin: 6px 0 0; font-size: 12px; opacity: 0.7; }
@@ -300,6 +331,7 @@ class EmbedService {
         --surface: ${chatbot.settings.theme.dark.surfaceColor};
         --text: ${chatbot.settings.theme.dark.textColor};
         --border: ${chatbot.settings.theme.dark.borderColor};
+        --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || chatbot.settings.theme.dark.surfaceColor};
       }
       .message.owner,
       .message.assistant,
@@ -313,9 +345,18 @@ class EmbedService {
   <div class="shell">
     <header class="header">
       <div class="header-row">
-        <div>
-          <h1 class="title">${chatbot.settings.botName}</h1>
-          <p class="subtitle">${chatbot.settings.initialMessage}</p>
+        <div class="brand-lockup">
+          <div class="brand-mark">
+            ${
+              chatbot.settings.brand.logoUrl
+                ? `<img src="${chatbot.settings.brand.logoUrl}" alt="${chatbot.settings.botName} logo" />`
+                : chatbot.settings.botName.slice(0, 1)
+            }
+          </div>
+          <div class="brand-copy">
+            <h1 class="title">${chatbot.settings.botName}</h1>
+            <p class="subtitle">${chatbot.settings.initialMessage}</p>
+          </div>
         </div>
         <div class="meta">
           <span id="statusBadge" class="status-badge">Active</span>

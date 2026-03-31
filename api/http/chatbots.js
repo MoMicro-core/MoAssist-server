@@ -1,5 +1,7 @@
 'use strict';
 
+const { BadRequestError } = require('../../src/shared/application/errors');
+
 const collectMultipartFiles = async (request) => {
   const files = [];
   const parts = request.parts();
@@ -14,6 +16,29 @@ const collectMultipartFiles = async (request) => {
   }
 
   return files;
+};
+
+const collectSingleMultipartFile = async (request) => {
+  let selected = null;
+  const parts = request.parts();
+
+  for await (const part of parts) {
+    if (part.type !== 'file') continue;
+    if (selected) {
+      throw new BadRequestError('Only one logo file can be uploaded');
+    }
+    selected = {
+      fileName: part.filename,
+      mimeType: part.mimetype,
+      buffer: await part.toBuffer(),
+    };
+  }
+
+  if (!selected) {
+    throw new BadRequestError('Logo file is required');
+  }
+
+  return selected;
 };
 
 module.exports = ({ services }) => [
@@ -206,6 +231,24 @@ module.exports = ({ services }) => [
         request.appSession,
         request.params.chatbotId,
         files,
+      );
+    },
+  },
+  {
+    method: 'POST',
+    url: '/v1/chatbots/:chatbotId/logo',
+    access: ['user', 'admin'],
+    schema: {
+      tags: ['Chatbots'],
+      summary: 'Upload a chatbot logo image',
+      consumes: ['multipart/form-data'],
+    },
+    handler: async (request) => {
+      const file = await collectSingleMultipartFile(request);
+      return services.chatbotService.uploadLogo(
+        request.appSession,
+        request.params.chatbotId,
+        file,
       );
     },
   },

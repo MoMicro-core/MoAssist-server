@@ -24,7 +24,7 @@ export class AuthService {
   getCurrentUser(actor: Actor): Promise<UserPublic>;
   updateCurrentUser(
     actor: Actor,
-    patch?: Partial<Pick<User, 'name' | 'photoUrl'>>,
+    patch?: Partial<Pick<User, 'name'>>,
   ): Promise<UserPublic>;
   logout(token: string): Promise<{ loggedOut: true }>;
 }

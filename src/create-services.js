@@ -126,6 +126,7 @@ const createServices = async (fastify) => {
     widgetSessionRepository,
     knowledgeFileRepository,
     openai: fastify.openai,
+    brandingStorage: fastify.supabaseStorage,
     countriesConfig: fastify.config.countries,
     tierCatalog,
   });

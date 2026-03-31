@@ -66,6 +66,12 @@ const createService = (overrides = {}) =>
     openai: overrides.openai || {
       createChatCompletion: jest.fn(),
     },
+    brandingStorage: overrides.brandingStorage || {
+      uploadPublicObject: jest.fn(async ({ objectPath }) => ({
+        objectPath,
+        publicUrl: `https://storage.test/${objectPath}`,
+      })),
+    },
     countriesConfig: overrides.countriesConfig || {},
     tierCatalog: createTierCatalog(billingConfig),
   });
@@ -130,6 +136,8 @@ describe('chatbot tier access', () => {
     settings.status = 'published';
     settings.auth = true;
     settings.ai.enabled = true;
+    settings.brand.logoUrl = 'https://storage.test/logo.png';
+    settings.brand.logoBackgroundColor = '#ffffff';
 
     const service = createService({
       chatbotRepository: {
@@ -148,6 +156,8 @@ describe('chatbot tier access', () => {
 
     expect(widget.settings.auth).toBe(true);
     expect(widget.settings.ai.enabled).toBe(false);
+    expect(widget.settings.brand.logoUrl).toBe('https://storage.test/logo.png');
+    expect(widget.settings.brand.logoBackgroundColor).toBe('#ffffff');
   });
 
   test('downgraded chatbot can save other settings without resubmitting blocked AI access', async () => {
@@ -234,6 +244,70 @@ describe('chatbot tier access', () => {
     );
     expect(install.dashboardIframeSnippet).toContain(
       '/chat/dashboard/iframe/cb-auth-install',
+    );
+  });
+
+  test('free tier cannot upload a custom chatbot logo', async () => {
+    const chatbot = {
+      id: 'cb-free-logo',
+      ownerUid: 'owner-1',
+      premiumStatus: 'free',
+      premiumPlan: 'free',
+      premiumCurrentPeriodEnd: null,
+      settings: createDefaultChatbotSettings(),
+    };
+    const document = createChatbotDocument(chatbot);
+    const service = createService({
+      chatbotRepository: {
+        findDocumentById: jest.fn(async () => document),
+      },
+    });
+
+    await expect(
+      service.uploadLogo({ uid: 'owner-1', role: 'user' }, chatbot.id, {
+        fileName: 'logo.png',
+        mimeType: 'image/png',
+        buffer: Buffer.from('logo'),
+      }),
+    ).rejects.toThrow('Current tier does not allow custom chatbot branding');
+  });
+
+  test('auth tier uploads logo and stores the Supabase URL in settings', async () => {
+    const chatbot = {
+      id: 'cb-auth-logo',
+      ownerUid: 'owner-1',
+      premiumStatus: 'active',
+      premiumPlan: 'auth',
+      premiumCurrentPeriodEnd: null,
+      settings: createDefaultChatbotSettings(),
+    };
+    const document = createChatbotDocument(chatbot);
+    const brandingStorage = {
+      uploadPublicObject: jest.fn(async ({ objectPath }) => ({
+        objectPath,
+        publicUrl: `https://storage.test/${objectPath}`,
+      })),
+    };
+    const service = createService({
+      chatbotRepository: {
+        findDocumentById: jest.fn(async () => document),
+      },
+      brandingStorage,
+    });
+
+    const updated = await service.uploadLogo(
+      { uid: 'owner-1', role: 'user' },
+      chatbot.id,
+      {
+        fileName: 'logo.png',
+        mimeType: 'image/png',
+        buffer: Buffer.from('logo'),
+      },
+    );
+
+    expect(brandingStorage.uploadPublicObject).toHaveBeenCalled();
+    expect(updated.settings.brand.logoUrl).toMatch(
+      /^https:\/\/storage\.test\/chatbots\/cb-auth-logo\/branding\//,
     );
   });
 

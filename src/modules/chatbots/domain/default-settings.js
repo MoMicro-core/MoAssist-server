@@ -31,6 +31,7 @@ const createDefaultChatbotSettings = () => ({
   ],
   brand: {
     logoUrl: '',
+    logoBackgroundColor: '',
     bubbleIconUrl: '',
   },
   theme: {

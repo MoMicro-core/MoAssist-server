@@ -22,6 +22,13 @@ export class ChatbotService {
     widgetSessionRepository: WidgetSessionRepository;
     knowledgeFileRepository: KnowledgeFileRepository;
     openai: OpenAIGateway;
+    brandingStorage: {
+      uploadPublicObject(args: {
+        objectPath: string;
+        buffer: Buffer;
+        mimeType?: string;
+      }): Promise<{ objectPath: string; publicUrl: string }>;
+    };
     countriesConfig: AppConfig['countries'];
     tierCatalog: TierCatalog;
   });
@@ -66,6 +73,11 @@ export class ChatbotService {
       aiGuidelines: string;
     };
   }>;
+  uploadLogo(actor: Actor, chatbotId: string, file: {
+    fileName: string;
+    mimeType: string;
+    buffer: Buffer;
+  }): Promise<Chatbot>;
   getLanguageOptions(): {
     defaultLanguage: string;
     allowedLanguages: string[];

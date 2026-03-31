@@ -144,6 +144,7 @@ export interface ChatbotSettings {
   leadsForm: LeadField[];
   brand: {
     logoUrl: string;
+    logoBackgroundColor: string;
     bubbleIconUrl: string;
   };
   theme: ChatbotTheme;
@@ -327,6 +328,11 @@ export interface AppConfig {
     url: string;
     database: string;
   };
+  supabase: {
+    url: string;
+    serviceRoleKey: string;
+    storageBucket: string;
+  };
 }
 
 export type MongooseModel<T> = Model<T>;
@@ -345,6 +351,13 @@ export interface FastifyApp {
   mongodb: FastifyMongoModels;
   stripe: StripeGateway;
   openai: OpenAIGateway;
+  supabaseStorage: {
+    uploadPublicObject(args: {
+      objectPath: string;
+      buffer: Buffer;
+      mimeType?: string;
+    }): Promise<{ objectPath: string; publicUrl: string }>;
+  };
   config: AppConfig;
   firebaseAuth: auth.Auth | null;
   client: ConnectionManager;

@@ -27,7 +27,7 @@ const DEFAULT_BILLING_TIERS = Object.freeze([
     checkoutEnabled: true,
     stripePriceId:
       process.env.STRIPE_AUTH_PRICE_ID || process.env.StripeAuthPriceId || '',
-    capabilities: ['authenticated_widget'],
+    capabilities: ['authenticated_widget', 'custom_branding'],
     limits: {},
     metadata: {
       description:
@@ -46,7 +46,12 @@ const DEFAULT_BILLING_TIERS = Object.freeze([
       process.env.STRIPE_PREMIUM_PRICE_ID ||
       process.env.StripePremiumPriceId ||
       '',
-    capabilities: ['authenticated_widget', 'ai_responder', 'knowledge_files'],
+    capabilities: [
+      'authenticated_widget',
+      'ai_responder',
+      'knowledge_files',
+      'custom_branding',
+    ],
     limits: {},
     metadata: {
       description:

@@ -121,7 +121,7 @@ class AuthService {
   }
 
   async updateCurrentUser(actor, patch = {}) {
-    const allowedFields = ['name', 'photoUrl'];
+    const allowedFields = ['name'];
     const update = {};
 
     for (const field of allowedFields) {
