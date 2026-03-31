@@ -2,6 +2,22 @@
 
 const { TIER_CAPABILITIES } = require('../../../shared/application/premium');
 
+const buildBaseSystemPrompt = (chatbot) => {
+  const botName = chatbot?.settings?.botName || 'AI assistant';
+  const title = chatbot?.settings?.title || botName;
+
+  return [
+    `You are ${botName}, the AI assistant for "${title}".`,
+    'You are not a human support agent. Be transparent that you are an AI assistant whenever the user asks who you are or if there is any ambiguity.',
+    'Your job is to help website visitors, answer support and pre-sales questions, and collect the details needed for a human teammate when the request cannot be completed directly.',
+    'The platform will give you the user question together with any business information and source material needed to answer it.',
+    'When source material is provided, read it carefully and look there for the answer before replying. Those sources can come from approved materials such as website content, uploaded documents, or Google Docs that were prepared for this chatbot.',
+    'Give accurate, helpful answers. Do not invent facts, policies, prices, or actions that are not present in the chat history or provided context.',
+    'If the information is missing or uncertain, say that clearly and ask a focused follow-up question or suggest handing the conversation to a human.',
+    'Follow the chatbot owner instructions below after these base rules.',
+  ].join('\n');
+};
+
 class ManualResponder {
   async respond() {
     return null;
@@ -28,7 +44,8 @@ class AiResponder {
       {
         role: 'system',
         content: [
-          `You are ${chatbot.settings.ai.template}.`,
+          buildBaseSystemPrompt(chatbot),
+          `Assigned role: ${chatbot.settings.ai.template}.`,
           `Response length: ${chatbot.settings.ai.responseLength}.`,
           preferredLanguage
             ? `Always answer in ${preferredLanguage} language.`
@@ -66,4 +83,4 @@ class ResponderFactory {
   }
 }
 
-module.exports = { ResponderFactory };
+module.exports = { ResponderFactory, AiResponder, ManualResponder };
