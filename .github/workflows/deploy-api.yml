@@ -19,13 +19,15 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s' "${{ secrets.LIGHTSAIL_SSH_KEY }}" > ~/.ssh/key
+          cat > ~/.ssh/key <<'EOF'
+          ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          EOF
           chmod 600 ~/.ssh/key
           ssh-keyscan -H "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Deploy on Lightsail
         run: |
-          ssh -i ~/.ssh/key "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" << 'EOF'
+          ssh -i ~/.ssh/key "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" <<'EOF'
             set -e
             cd /var/www/MoAssist-server
             git pull --ff-only origin main
