@@ -1,0 +1,35 @@
+name: Deploy API to Lightsail
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-api-main
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Prepare SSH
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s' "${{ secrets.LIGHTSAIL_SSH_KEY }}" > ~/.ssh/key
+          chmod 600 ~/.ssh/key
+          ssh-keyscan -H "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy on Lightsail
+        run: |
+          ssh -i ~/.ssh/key "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" << 'EOF'
+            set -e
+            cd /var/www/MoAssist-server
+            git pull --ff-only origin main
+            npm install --omit=dev
+            pm2 restart assistant-api || pm2 start npm --name assistant-api -- start
+            pm2 save
+          EOF
