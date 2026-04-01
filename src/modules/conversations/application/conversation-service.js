@@ -108,6 +108,12 @@ const mergeLocale = (
   return nextLocale;
 };
 
+const createMessagePayload = (conversationId, chatbotId, message) => ({
+  conversationId,
+  chatbotId,
+  message,
+});
+
 class ConversationService {
   constructor({
     chatbotService,
@@ -212,6 +218,96 @@ class ConversationService {
     this.connectionManager.publish(
       `chatbot:${conversation.chatbotId}`,
       'conversation.read',
+      payload,
+    );
+  }
+
+  publishMessageCreated(conversationId, chatbotId, message) {
+    const payload = createMessagePayload(conversationId, chatbotId, message);
+
+    this.connectionManager.publish(
+      `conversation:${conversationId}`,
+      'message.created',
+      payload,
+    );
+    this.connectionManager.publish(
+      `chatbot:${chatbotId}`,
+      'message.created',
+      payload,
+    );
+
+    return payload;
+  }
+
+  publishMessageStreamStarted(conversationId, chatbotId, message) {
+    const payload = createMessagePayload(conversationId, chatbotId, message);
+
+    this.connectionManager.publish(
+      `conversation:${conversationId}`,
+      'message.stream.started',
+      payload,
+    );
+    this.connectionManager.publish(
+      `chatbot:${chatbotId}`,
+      'message.stream.started',
+      payload,
+    );
+  }
+
+  publishMessageStreamDelta(conversationId, chatbotId, messageId, chunk) {
+    const payload = {
+      conversationId,
+      chatbotId,
+      messageId,
+      chunk,
+    };
+
+    this.connectionManager.publish(
+      `conversation:${conversationId}`,
+      'message.stream.delta',
+      payload,
+    );
+    this.connectionManager.publish(
+      `chatbot:${chatbotId}`,
+      'message.stream.delta',
+      payload,
+    );
+  }
+
+  publishMessageStreamCompleted(conversationId, chatbotId, messageId) {
+    const payload = {
+      conversationId,
+      chatbotId,
+      messageId,
+    };
+
+    this.connectionManager.publish(
+      `conversation:${conversationId}`,
+      'message.stream.completed',
+      payload,
+    );
+    this.connectionManager.publish(
+      `chatbot:${chatbotId}`,
+      'message.stream.completed',
+      payload,
+    );
+  }
+
+  publishMessageStreamFailed(conversationId, chatbotId, messageId) {
+    const payload = {
+      conversationId,
+      chatbotId,
+      messageId,
+    };
+
+    this.connectionManager.publish(
+      `conversation:${conversationId}`,
+      'message.stream.failed',
+      payload,
+    );
+    this.connectionManager.publish(
+      `chatbot:${chatbotId}`,
+      'message.stream.failed',
       payload,
     );
   }
@@ -659,64 +755,94 @@ class ConversationService {
     document.unreadForOwner += 1;
     await document.save();
 
-    const payload = {
-      conversationId: document.id,
-      chatbotId: document.chatbotId,
+    const payload = this.publishMessageCreated(
+      document.id,
+      document.chatbotId,
       message,
-    };
-
-    this.connectionManager.publish(
-      `conversation:${document.id}`,
-      'message.created',
-      payload,
-    );
-    this.connectionManager.publish(
-      `chatbot:${document.chatbotId}`,
-      'message.created',
-      payload,
     );
     if (previousStatus !== 'active') this.publishConversationUpdate(document);
 
     queueMicrotask(async () => {
+      let aiMessage = null;
+
       try {
         const responder = this.responderFactory.create(chatbot);
-        const answer = await responder.respond({
+        aiMessage = createMessage('assistant', '');
+
+        const answer = await responder.respondStream({
           chatbot,
           conversation: document.toObject(),
           prompt: normalizedContent,
+          onTextDelta: async (chunk) => {
+            if (!chunk) return;
+            if (!aiMessage.content) {
+              this.publishMessageStreamStarted(
+                document.id,
+                document.chatbotId,
+                aiMessage,
+              );
+            }
+            aiMessage.content += chunk;
+            this.publishMessageStreamDelta(
+              document.id,
+              document.chatbotId,
+              aiMessage.id,
+              chunk,
+            );
+          },
         });
 
-        if (!answer) return;
+        const finalAnswer = String(answer || '').trim();
+        if (!finalAnswer) {
+          if (aiMessage.content) {
+            this.publishMessageStreamFailed(
+              document.id,
+              document.chatbotId,
+              aiMessage.id,
+            );
+          }
+          return;
+        }
+        aiMessage.content = finalAnswer;
 
         const refreshed = await this.conversationRepository.findDocumentById(
           document.id,
         );
-        if (!refreshed) return;
-        if (normalizeConversationStatus(refreshed.status) === 'closed') return;
+        if (!refreshed) {
+          this.publishMessageStreamFailed(
+            document.id,
+            document.chatbotId,
+            aiMessage.id,
+          );
+          return;
+        }
+        if (normalizeConversationStatus(refreshed.status) === 'closed') {
+          this.publishMessageStreamFailed(
+            document.id,
+            document.chatbotId,
+            aiMessage.id,
+          );
+          return;
+        }
 
-        const aiMessage = createMessage('assistant', answer);
         refreshed.messages.push(aiMessage);
-        refreshed.lastMessagePreview = answer.slice(0, 120);
+        refreshed.lastMessagePreview = finalAnswer.slice(0, 120);
         refreshed.lastMessageAt = aiMessage.createdAt;
         await refreshed.save();
 
-        const eventPayload = {
-          conversationId: refreshed.id,
-          chatbotId: refreshed.chatbotId,
-          message: aiMessage,
-        };
-
-        this.connectionManager.publish(
-          `conversation:${refreshed.id}`,
-          'message.created',
-          eventPayload,
-        );
-        this.connectionManager.publish(
-          `chatbot:${refreshed.chatbotId}`,
-          'message.created',
-          eventPayload,
+        this.publishMessageStreamCompleted(
+          refreshed.id,
+          refreshed.chatbotId,
+          aiMessage.id,
         );
       } catch {
+        if (aiMessage?.id) {
+          this.publishMessageStreamFailed(
+            document.id,
+            document.chatbotId,
+            aiMessage.id,
+          );
+        }
         return;
       }
     });
@@ -754,21 +880,10 @@ class ConversationService {
     document.lastMessageAt = message.createdAt;
     await document.save();
 
-    const payload = {
-      conversationId: document.id,
-      chatbotId: document.chatbotId,
+    const payload = this.publishMessageCreated(
+      document.id,
+      document.chatbotId,
       message,
-    };
-
-    this.connectionManager.publish(
-      `conversation:${document.id}`,
-      'message.created',
-      payload,
-    );
-    this.connectionManager.publish(
-      `chatbot:${document.chatbotId}`,
-      'message.created',
-      payload,
     );
 
     return payload;

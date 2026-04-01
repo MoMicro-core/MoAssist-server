@@ -22,6 +22,10 @@ class ManualResponder {
   async respond() {
     return null;
   }
+
+  async respondStream() {
+    return null;
+  }
 }
 
 class AiResponder {
@@ -30,7 +34,7 @@ class AiResponder {
     this.knowledgeService = knowledgeService;
   }
 
-  async respond({ chatbot, conversation, prompt }) {
+  async buildMessages({ chatbot, conversation, prompt }) {
     const context = await this.knowledgeService.search(chatbot.id, prompt, 5);
     const preferredLanguage =
       typeof conversation?.locale?.language === 'string'
@@ -62,7 +66,35 @@ class AiResponder {
       { role: 'user', content: prompt },
     ];
 
+    return messages;
+  }
+
+  async respond({ chatbot, conversation, prompt }) {
+    const messages = await this.buildMessages({
+      chatbot,
+      conversation,
+      prompt,
+    });
+
     return this.openai.createChatCompletion({ messages });
+  }
+
+  async respondStream({
+    chatbot,
+    conversation,
+    prompt,
+    onTextDelta = async () => null,
+  }) {
+    const messages = await this.buildMessages({
+      chatbot,
+      conversation,
+      prompt,
+    });
+
+    return this.openai.streamChatCompletion({
+      messages,
+      onTextDelta,
+    });
   }
 }
 

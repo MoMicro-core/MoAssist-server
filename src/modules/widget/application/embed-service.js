@@ -3,15 +3,92 @@
 const { toWebsocketUrl } = require('../../../shared/application/url');
 
 const escapeScript = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
+const DEFAULT_COLOR_FALLBACK = 'rgba(15, 23, 42, 0.12)';
+
+const withAlpha = (
+  value = '',
+  alpha = 1,
+  fallback = DEFAULT_COLOR_FALLBACK,
+) => {
+  if (typeof value !== 'string') return fallback;
+
+  const normalized = value.trim();
+  if (!normalized) return fallback;
+
+  const longHex = normalized.match(/^#([0-9a-f]{6})$/i);
+  if (longHex) {
+    const int = Number.parseInt(longHex[1], 16);
+    const red = (int >> 16) & 255;
+    const green = (int >> 8) & 255;
+    const blue = int & 255;
+    return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+  }
+
+  const shortHex = normalized.match(/^#([0-9a-f]{3})$/i);
+  if (shortHex) {
+    const [red, green, blue] = shortHex[1]
+      .split('')
+      .map((part) => Number.parseInt(part + part, 16));
+    return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+  }
+
+  const rgb = normalized.match(
+    /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*[\d.]+\s*)?\)$/i,
+  );
+  if (rgb) {
+    return `rgba(${rgb[1]}, ${rgb[2]}, ${rgb[3]}, ${alpha})`;
+  }
+
+  return fallback;
+};
+
+const formatLanguageLabel = (value = '') =>
+  String(value || '')
+    .split(/[\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ') || 'English';
 
 class EmbedService {
   renderScript({ chatbot, baseUrl }) {
     const language = chatbot.settings.defaultLanguage || 'english';
     const iframeBaseUrl = `${baseUrl}/chat/iframe/${chatbot.id}?lang=${encodeURIComponent(language)}`;
-    const location =
-      chatbot.settings.widgetLocation === 'left' ? 'left' : 'right';
-    const accent = chatbot.settings.theme.light.accentColor;
-    const text = chatbot.settings.theme.light.accentTextColor;
+    const widgetLocation = chatbot.settings.widgetLocation || 'right';
+    const isTop =
+      widgetLocation === 'top-left' || widgetLocation === 'top-right';
+    const isLeft = widgetLocation === 'left' || widgetLocation === 'top-left';
+    const verticalEdge = isTop ? 'top' : 'bottom';
+    const horizontalEdge = isLeft ? 'left' : 'right';
+    const flexDirection = isTop ? 'column' : 'column-reverse';
+    const alignItems = isLeft ? 'flex-start' : 'flex-end';
+    const transformOrigin = `${isTop ? 'top' : 'bottom'} ${isLeft ? 'left' : 'right'}`;
+    const closedTranslateY = isTop ? '-18px' : '18px';
+    const lightTheme = chatbot.settings.theme.light;
+    const accent = lightTheme.accentColor;
+    const accentText = lightTheme.accentTextColor;
+    const surface = lightTheme.surfaceColor;
+    const border = lightTheme.borderColor;
+    const text = lightTheme.textColor;
+    const rounded = chatbot.settings.rounded !== false;
+    const launcherRadius = rounded ? '26px' : '18px';
+    const panelRadius = rounded ? '30px' : '20px';
+    const iconRadius = rounded ? '18px' : '12px';
+    const launcherShadow = `0 18px 42px ${withAlpha(
+      accent,
+      0.28,
+      'rgba(15, 23, 42, 0.18)',
+    )}`;
+    const panelShadow = `0 28px 64px ${withAlpha(
+      accent,
+      0.18,
+      'rgba(15, 23, 42, 0.22)',
+    )}`;
+    const accentSoft = withAlpha(accent, 0.16, 'rgba(15, 23, 42, 0.08)');
+    const launcherIconUrl =
+      chatbot.settings.brand.bubbleIconUrl || chatbot.settings.brand.logoUrl;
+    const launcherTitle = chatbot.settings.botName;
+    const launcherSubtitle = chatbot.settings.title || chatbot.settings.botName;
+    const launcherInitial = chatbot.settings.botName.slice(0, 1).toUpperCase();
 
     return `
 (function () {
@@ -26,44 +103,176 @@ class EmbedService {
     widgetConfig && typeof widgetConfig.authClient === 'string'
       ? widgetConfig.authClient
       : '';
+  var chatbotId = ${escapeScript(chatbot.id)};
   var iframeSrc =
     ${escapeScript(iframeBaseUrl)} +
     (authClient ? '&authClient=' + encodeURIComponent(authClient) : '');
   var wrapper = document.createElement('div');
   wrapper.id = 'momicro-assist-${chatbot.id}';
   wrapper.style.position = 'fixed';
-  wrapper.style.bottom = '24px';
-  wrapper.style.${location} = '24px';
+  wrapper.style.${verticalEdge} = '18px';
+  wrapper.style.${horizontalEdge} = '18px';
   wrapper.style.zIndex = '2147483647';
-  wrapper.style.fontFamily = 'ui-sans-serif, system-ui, sans-serif';
+  wrapper.style.maxWidth = 'min(440px, calc(100vw - 18px))';
+  wrapper.style.display = 'flex';
+  wrapper.style.flexDirection = ${escapeScript(flexDirection)};
+  wrapper.style.alignItems = ${escapeScript(alignItems)};
+  wrapper.style.gap = '12px';
+  wrapper.style.fontFamily =
+    '"SF Pro Display", "Segoe UI", ui-sans-serif, system-ui, sans-serif';
   var button = document.createElement('button');
   button.type = 'button';
-  button.textContent = ${escapeScript(chatbot.settings.botName)};
-  button.style.background = ${escapeScript(accent)};
-  button.style.color = ${escapeScript(text)};
+  button.setAttribute('aria-expanded', 'false');
+  button.setAttribute('aria-label', ${escapeScript(
+    `Open ${chatbot.settings.botName}`,
+  )});
+  button.style.display = 'grid';
+  button.style.gridTemplateColumns = '52px minmax(0, 1fr)';
+  button.style.alignItems = 'center';
+  button.style.gap = '12px';
+  button.style.width = 'min(320px, calc(100vw - 18px))';
   button.style.border = '0';
-  button.style.borderRadius = '999px';
-  button.style.padding = '14px 18px';
+  button.style.borderRadius = ${escapeScript(launcherRadius)};
+  button.style.padding = '10px 14px 10px 10px';
   button.style.cursor = 'pointer';
-  button.style.boxShadow = '0 16px 36px rgba(15, 23, 42, 0.18)';
+  button.style.textAlign = 'left';
+  button.style.color = ${escapeScript(text)};
+  button.style.background =
+    'linear-gradient(180deg, ${surface}, ${surface}) padding-box, linear-gradient(135deg, ${accentSoft}, ${border}) border-box';
+  button.style.border = '1px solid transparent';
+  button.style.boxShadow = ${escapeScript(launcherShadow)};
+  button.style.backdropFilter = 'blur(18px)';
+  var icon = document.createElement('span');
+  icon.style.width = '52px';
+  icon.style.height = '52px';
+  icon.style.borderRadius = ${escapeScript(iconRadius)};
+  icon.style.display = 'flex';
+  icon.style.alignItems = 'center';
+  icon.style.justifyContent = 'center';
+  icon.style.overflow = 'hidden';
+  icon.style.flex = 'none';
+  icon.style.background = ${escapeScript(
+    chatbot.settings.brand.logoBackgroundColor || accentSoft,
+  )};
+  icon.style.boxShadow = 'inset 0 0 0 1px ${border}';
+  if (${launcherIconUrl ? 'true' : 'false'}) {
+    var iconImage = document.createElement('img');
+    iconImage.src = ${escapeScript(launcherIconUrl || '')};
+    iconImage.alt = ${escapeScript(`${chatbot.settings.botName} icon`)};
+    iconImage.style.width = '100%';
+    iconImage.style.height = '100%';
+    iconImage.style.objectFit = 'cover';
+    icon.appendChild(iconImage);
+  } else {
+    icon.textContent = ${escapeScript(launcherInitial)};
+    icon.style.fontSize = '18px';
+    icon.style.fontWeight = '800';
+    icon.style.color = ${escapeScript(accentText)};
+    icon.style.background =
+      'linear-gradient(135deg, ${accent}, ${accent})';
+  }
+  var copy = document.createElement('span');
+  copy.style.display = 'grid';
+  copy.style.gap = '4px';
+  copy.style.minWidth = '0';
+  var copyTitle = document.createElement('span');
+  copyTitle.textContent = ${escapeScript(launcherTitle)};
+  copyTitle.style.fontSize = '15px';
+  copyTitle.style.fontWeight = '800';
+  copyTitle.style.lineHeight = '1.1';
+  copyTitle.style.whiteSpace = 'nowrap';
+  copyTitle.style.overflow = 'hidden';
+  copyTitle.style.textOverflow = 'ellipsis';
+  var copySubtitle = document.createElement('span');
+  copySubtitle.textContent = ${escapeScript(launcherSubtitle)};
+  copySubtitle.style.fontSize = '12px';
+  copySubtitle.style.lineHeight = '1.2';
+  copySubtitle.style.color = ${escapeScript(
+    withAlpha(text, 0.72, 'rgba(15, 23, 42, 0.72)'),
+  )};
+  copySubtitle.style.whiteSpace = 'nowrap';
+  copySubtitle.style.overflow = 'hidden';
+  copySubtitle.style.textOverflow = 'ellipsis';
+  copy.appendChild(copyTitle);
+  copy.appendChild(copySubtitle);
+  button.appendChild(icon);
+  button.appendChild(copy);
+  var panel = document.createElement('div');
+  panel.style.width = '420px';
+  panel.style.maxWidth = 'calc(100vw - 18px)';
+  panel.style.maxHeight = '0px';
+  panel.style.overflow = 'hidden';
+  panel.style.opacity = '0';
+  panel.style.transform = ${escapeScript(
+    `translateY(${closedTranslateY}) scale(0.98)`,
+  )};
+  panel.style.transformOrigin = ${escapeScript(transformOrigin)};
+  panel.style.pointerEvents = 'none';
+  panel.style.transition =
+    'max-height 240ms ease, opacity 180ms ease, transform 240ms ease';
+  panel.style.borderRadius = ${escapeScript(panelRadius)};
+  panel.style.border = '1px solid ${border}';
+  panel.style.background = ${escapeScript(surface)};
+  panel.style.boxShadow = ${escapeScript(panelShadow)};
+  panel.style.backdropFilter = 'blur(18px)';
   var iframe = document.createElement('iframe');
   iframe.src = iframeSrc;
   iframe.title = ${escapeScript(chatbot.settings.botName)};
+  iframe.loading = 'lazy';
   iframe.style.width = '420px';
   iframe.style.maxWidth = 'calc(100vw - 32px)';
   iframe.style.height = '680px';
   iframe.style.maxHeight = 'calc(100vh - 96px)';
   iframe.style.border = '0';
-  iframe.style.borderRadius = '22px';
-  iframe.style.boxShadow = '0 24px 60px rgba(15, 23, 42, 0.24)';
-  iframe.style.background = '#fff';
-  iframe.style.display = 'none';
-  iframe.style.marginTop = '12px';
-  button.addEventListener('click', function () {
-    iframe.style.display = iframe.style.display === 'none' ? 'block' : 'none';
+  iframe.style.borderRadius = ${escapeScript(panelRadius)};
+  iframe.style.background = ${escapeScript(surface)};
+  var isOpen = false;
+  var notifyIframe = function (action) {
+    if (!iframe.contentWindow) return;
+    iframe.contentWindow.postMessage(
+      {
+        type: 'momicro-assist',
+        action: action,
+        chatbotId: chatbotId
+      },
+      '*'
+    );
+  };
+  var setOpen = function (next) {
+    isOpen = !!next;
+    button.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    panel.style.maxHeight = isOpen ? 'calc(100vh - 92px)' : '0px';
+    panel.style.opacity = isOpen ? '1' : '0';
+    panel.style.transform = isOpen
+      ? 'translateY(0) scale(1)'
+      : ${escapeScript(`translateY(${closedTranslateY}) scale(0.98)`)};
+    panel.style.pointerEvents = isOpen ? 'auto' : 'none';
+    notifyIframe(isOpen ? 'open' : 'hide');
+    if (!isOpen) {
+      button.focus();
+    }
+  };
+  iframe.addEventListener('load', function () {
+    notifyIframe(isOpen ? 'open' : 'hide');
   });
+  button.addEventListener('click', function () {
+    setOpen(!isOpen);
+  });
+  window.addEventListener('message', function (event) {
+    if (event.source !== iframe.contentWindow) return;
+    var data = event.data || {};
+    if (data.type !== 'momicro-assist' || data.chatbotId !== chatbotId) return;
+    if (data.action === 'hide') {
+      setOpen(false);
+      return;
+    }
+    if (data.action === 'open') {
+      setOpen(true);
+    }
+  });
+  panel.appendChild(iframe);
   wrapper.appendChild(button);
-  wrapper.appendChild(iframe);
+  wrapper.appendChild(panel);
   document.body.appendChild(wrapper);
 }());
 `.trim();
@@ -71,6 +280,25 @@ class EmbedService {
 
   renderIframe({ chatbot, baseUrl, authClient = '' }) {
     const websocketUrl = `${toWebsocketUrl(baseUrl)}/ws`;
+    const lightTheme = chatbot.settings.theme.light;
+    const darkTheme = chatbot.settings.theme.dark;
+    const rounded = chatbot.settings.rounded !== false;
+    const radiusXl = rounded ? '30px' : '20px';
+    const radiusLg = rounded ? '24px' : '16px';
+    const radiusMd = rounded ? '18px' : '12px';
+    const radiusSm = rounded ? '14px' : '10px';
+    const launcherIconUrl =
+      chatbot.settings.brand.bubbleIconUrl || chatbot.settings.brand.logoUrl;
+    const brandIconUrl =
+      chatbot.settings.brand.logoUrl || chatbot.settings.brand.bubbleIconUrl;
+    const activityLabel = `${chatbot.settings.inactivityHours}h inactivity window`;
+    const languageLabel = formatLanguageLabel(chatbot.settings.defaultLanguage);
+    const responseModeLabel = chatbot.settings.ai.enabled
+      ? 'AI replies'
+      : 'Human follow-up';
+    const sessionModeLabel = chatbot.settings.auth
+      ? 'Secure session'
+      : 'Guest chat';
     const payload = {
       chatbot,
       apiBaseUrl: baseUrl,
@@ -83,35 +311,151 @@ class EmbedService {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${chatbot.settings.botName}</title>
+  <title>${chatbot.settings.title || chatbot.settings.botName}</title>
   <style>
     :root {
       color-scheme: light dark;
-      --accent: ${chatbot.settings.theme.light.accentColor};
-      --accent-text: ${chatbot.settings.theme.light.accentTextColor};
-      --bg: ${chatbot.settings.theme.light.backgroundColor};
-      --surface: ${chatbot.settings.theme.light.surfaceColor};
-      --text: ${chatbot.settings.theme.light.textColor};
-      --border: ${chatbot.settings.theme.light.borderColor};
-      --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || chatbot.settings.theme.light.surfaceColor};
+      --accent: ${lightTheme.accentColor};
+      --accent-text: ${lightTheme.accentTextColor};
+      --accent-soft: ${withAlpha(
+        lightTheme.accentColor,
+        0.14,
+        'rgba(9, 154, 217, 0.14)',
+      )};
+      --accent-fog: ${withAlpha(
+        lightTheme.accentColor,
+        0.08,
+        'rgba(9, 154, 217, 0.08)',
+      )};
+      --accent-glow: ${withAlpha(
+        lightTheme.accentColor,
+        0.24,
+        'rgba(9, 154, 217, 0.24)',
+      )};
+      --bg: ${lightTheme.backgroundColor};
+      --surface: ${lightTheme.surfaceColor};
+      --surface-soft: ${withAlpha(
+        lightTheme.surfaceColor,
+        0.92,
+        lightTheme.surfaceColor,
+      )};
+      --text: ${lightTheme.textColor};
+      --text-soft: ${withAlpha(
+        lightTheme.textColor,
+        0.72,
+        'rgba(15, 23, 42, 0.72)',
+      )};
+      --border: ${lightTheme.borderColor};
+      --border-soft: ${withAlpha(
+        lightTheme.borderColor,
+        0.65,
+        lightTheme.borderColor,
+      )};
+      --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || lightTheme.surfaceColor};
+      --radius-xl: ${radiusXl};
+      --radius-lg: ${radiusLg};
+      --radius-md: ${radiusMd};
+      --radius-sm: ${radiusSm};
+      --shadow: 0 28px 64px ${withAlpha(
+        lightTheme.accentColor,
+        0.18,
+        'rgba(15, 23, 42, 0.18)',
+      )};
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      background: radial-gradient(circle at top, rgba(9,154,217,0.18), transparent 34%), var(--bg);
-      font-family: ui-sans-serif, system-ui, sans-serif;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top, var(--accent-glow), transparent 36%),
+        radial-gradient(circle at bottom right, var(--accent-fog), transparent 28%),
+        var(--bg);
+      font-family: "SF Pro Display", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
       color: var(--text);
+    }
+    body.widget-hidden .shell {
+      display: none;
     }
     .shell {
       height: 100vh;
       display: grid;
       grid-template-rows: auto 1fr auto;
-      background: var(--surface);
+      background: linear-gradient(180deg, var(--surface-soft), var(--surface));
+    }
+    .standalone-launcher {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 10;
+      display: inline-grid;
+      grid-template-columns: 46px minmax(0, 1fr);
+      align-items: center;
+      gap: 12px;
+      width: min(300px, calc(100vw - 24px));
+      border: 1px solid transparent;
+      border-radius: var(--radius-lg);
+      padding: 10px 14px 10px 10px;
+      background:
+        linear-gradient(180deg, var(--surface), var(--surface)) padding-box,
+        linear-gradient(135deg, var(--accent-soft), var(--border-soft)) border-box;
+      box-shadow: var(--shadow);
+      color: var(--text);
+      cursor: pointer;
+      text-align: left;
+    }
+    .standalone-launcher[hidden] {
+      display: none;
+    }
+    .standalone-icon,
+    .brand-mark {
+      width: 46px;
+      height: 46px;
+      border-radius: calc(var(--radius-md) - 2px);
+      flex: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: var(--logo-bg);
+      border: 1px solid var(--border-soft);
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+    .standalone-icon img,
+    .brand-mark img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .standalone-copy {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+    .standalone-title {
+      font-size: 15px;
+      font-weight: 800;
+      line-height: 1.1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .standalone-subtitle {
+      font-size: 12px;
+      color: var(--text-soft);
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .header {
-      padding: 18px 18px 12px;
+      padding: 18px 18px 14px;
       border-bottom: 1px solid var(--border);
-      background: linear-gradient(135deg, rgba(9,154,217,0.16), rgba(92,215,211,0.04), rgba(255,255,255,0));
+      background:
+        linear-gradient(135deg, var(--accent-soft), transparent 64%),
+        linear-gradient(180deg, var(--surface), transparent);
     }
     .header-row {
       display: flex;
@@ -121,38 +465,47 @@ class EmbedService {
     }
     .brand-lockup {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 12px;
       min-width: 0;
-    }
-    .brand-mark {
-      width: 42px;
-      height: 42px;
-      border-radius: 14px;
-      flex: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      background: var(--logo-bg);
-      border: 1px solid var(--border);
-      color: var(--text);
-      font-size: 16px;
-      font-weight: 700;
-    }
-    .brand-mark img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      padding: 6px;
     }
     .brand-copy {
       min-width: 0;
     }
-    .title { margin: 0; font-size: 16px; font-weight: 700; }
-    .subtitle { margin: 6px 0 0; font-size: 12px; opacity: 0.7; }
-    .meta {
+    .eyebrow {
       display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 999px;
+      padding: 7px 10px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      max-width: 100%;
+    }
+    .eyebrow span {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .title {
+      margin: 10px 0 0;
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.05;
+    }
+    .subtitle {
+      margin: 6px 0 0;
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text-soft);
+    }
+    .meta {
+      display: flex;
       align-items: center;
       gap: 8px;
       flex-wrap: wrap;
@@ -162,57 +515,122 @@ class EmbedService {
       display: inline-flex;
       align-items: center;
       border-radius: 999px;
-      border: 1px solid var(--border);
+      border: 1px solid var(--border-soft);
       padding: 5px 10px;
       font-size: 11px;
-      font-weight: 700;
+      font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.06em;
+      background: rgba(255, 255, 255, 0.42);
     }
-    .end-chat {
-      border: 1px solid var(--border);
+    .status-badge.active {
+      color: var(--accent);
+      background: var(--accent-soft);
+      border-color: transparent;
+    }
+    .status-badge.pending {
+      color: #9a6700;
+      background: rgba(245, 158, 11, 0.14);
+      border-color: rgba(245, 158, 11, 0.22);
+    }
+    .status-badge.closed {
+      color: #b42318;
+      background: rgba(180, 35, 24, 0.1);
+      border-color: rgba(180, 35, 24, 0.2);
+    }
+    .header-tray {
+      margin-top: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .info-chip {
+      display: inline-flex;
+      align-items: center;
       border-radius: 999px;
-      background: transparent;
+      padding: 7px 10px;
+      border: 1px solid var(--border-soft);
+      background: rgba(255, 255, 255, 0.5);
+      color: var(--text-soft);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .icon-button,
+    .end-chat {
+      border: 1px solid var(--border-soft);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.52);
       color: inherit;
-      padding: 6px 10px;
+      padding: 7px 11px;
       font-size: 12px;
+      font-weight: 700;
       cursor: pointer;
     }
+    .end-chat {
+      color: #b42318;
+      background: rgba(180, 35, 24, 0.08);
+      border-color: rgba(180, 35, 24, 0.16);
+    }
     .messages {
-      padding: 16px;
+      padding: 18px 16px 16px;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      background: transparent;
+      gap: 12px;
+      background:
+        radial-gradient(circle at top right, var(--accent-fog), transparent 24%),
+        transparent;
     }
     .message {
       max-width: 85%;
-      padding: 10px 12px;
-      border-radius: 18px;
-      line-height: 1.45;
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      line-height: 1.55;
       font-size: 14px;
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+      transition: opacity 140ms ease, transform 140ms ease;
+    }
+    .message-content {
       white-space: pre-wrap;
       word-break: break-word;
     }
+    .message.streaming {
+      opacity: 0.96;
+    }
+    .message.streaming .message-content::after {
+      content: '';
+      display: inline-block;
+      width: 0.42em;
+      height: 1em;
+      margin-left: 2px;
+      border-radius: 999px;
+      background: currentColor;
+      opacity: 0.45;
+      vertical-align: -0.12em;
+      animation: momicro-widget-caret 0.9s steps(1, end) infinite;
+    }
     .message.visitor {
       align-self: flex-end;
-      background: var(--accent);
+      background: linear-gradient(135deg, var(--accent), var(--accent));
       color: var(--accent-text);
-      border-bottom-right-radius: 6px;
+      border-bottom-right-radius: calc(var(--radius-sm) - 4px);
     }
     .message.owner,
     .message.assistant,
     .message.system {
       align-self: flex-start;
-      background: rgba(15, 23, 42, 0.05);
+      background: rgba(255, 255, 255, 0.74);
       color: var(--text);
-      border-bottom-left-radius: 6px;
+      border: 1px solid var(--border-soft);
+      border-bottom-left-radius: calc(var(--radius-sm) - 4px);
     }
     .composer {
       padding: 14px;
       border-top: 1px solid var(--border);
-      background: var(--surface);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0)),
+        var(--surface);
     }
     .composer.locked {
       opacity: 0.7;
@@ -221,16 +639,24 @@ class EmbedService {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
+    }
+    .suggestions[hidden] {
+      display: none;
     }
     .chip {
-      border: 1px solid var(--border);
-      background: transparent;
+      border: 1px solid var(--border-soft);
+      background: rgba(255, 255, 255, 0.78);
       color: var(--text);
       border-radius: 999px;
-      padding: 6px 10px;
+      padding: 7px 11px;
       cursor: pointer;
       font-size: 12px;
+      transition: transform 120ms ease, border-color 120ms ease;
+    }
+    .chip:hover {
+      transform: translateY(-1px);
+      border-color: var(--accent);
     }
     .row {
       display: grid;
@@ -242,12 +668,13 @@ class EmbedService {
       min-height: 44px;
       max-height: 140px;
       resize: none;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 10px 12px;
-      background: transparent;
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.86);
       color: inherit;
       font: inherit;
+      box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.03);
     }
     textarea:disabled,
     button:disabled {
@@ -256,12 +683,24 @@ class EmbedService {
     }
     button.send {
       border: 0;
-      border-radius: 14px;
+      border-radius: var(--radius-sm);
       background: var(--accent);
       color: var(--accent-text);
       padding: 0 18px;
-      font-weight: 700;
+      font-weight: 800;
       cursor: pointer;
+      box-shadow: 0 18px 32px var(--accent-glow);
+    }
+    .composer-meta {
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      color: var(--text-soft);
+      font-size: 12px;
+      line-height: 1.5;
     }
     .overlay {
       position: fixed;
@@ -276,13 +715,20 @@ class EmbedService {
       width: 100%;
       max-width: 360px;
       background: var(--surface);
-      border-radius: 22px;
+      border-radius: var(--radius-lg);
       padding: 18px;
-      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+      border: 1px solid var(--border-soft);
+      box-shadow: var(--shadow);
     }
     .card h2 {
       margin: 0 0 12px;
       font-size: 18px;
+    }
+    .card p {
+      margin: -4px 0 14px;
+      color: var(--text-soft);
+      font-size: 13px;
+      line-height: 1.5;
     }
     .field {
       display: grid;
@@ -294,12 +740,12 @@ class EmbedService {
       opacity: 0.8;
     }
     .field input {
-      border: 1px solid var(--border);
-      border-radius: 12px;
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-sm);
       padding: 10px 12px;
       font: inherit;
       color: inherit;
-      background: transparent;
+      background: rgba(255, 255, 255, 0.88);
     }
     .actions {
       display: flex;
@@ -308,10 +754,10 @@ class EmbedService {
       margin-top: 8px;
     }
     .ghost {
-      background: transparent;
+      background: rgba(255, 255, 255, 0.66);
       color: inherit;
-      border: 1px solid var(--border);
-      border-radius: 12px;
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-sm);
       padding: 10px 12px;
       cursor: pointer;
     }
@@ -319,49 +765,128 @@ class EmbedService {
       background: var(--accent);
       color: var(--accent-text);
       border: 0;
-      border-radius: 12px;
+      border-radius: var(--radius-sm);
       padding: 10px 12px;
       cursor: pointer;
     }
+    @media (max-width: 520px) {
+      .header-row {
+        flex-direction: column;
+      }
+      .meta {
+        width: 100%;
+        justify-content: flex-start;
+      }
+      .message {
+        max-width: 92%;
+      }
+      .composer-meta {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
     @media (prefers-color-scheme: dark) {
       :root {
-        --accent: ${chatbot.settings.theme.dark.accentColor};
-        --accent-text: ${chatbot.settings.theme.dark.accentTextColor};
-        --bg: ${chatbot.settings.theme.dark.backgroundColor};
-        --surface: ${chatbot.settings.theme.dark.surfaceColor};
-        --text: ${chatbot.settings.theme.dark.textColor};
-        --border: ${chatbot.settings.theme.dark.borderColor};
-        --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || chatbot.settings.theme.dark.surfaceColor};
+        --accent: ${darkTheme.accentColor};
+        --accent-text: ${darkTheme.accentTextColor};
+        --accent-soft: ${withAlpha(
+          darkTheme.accentColor,
+          0.16,
+          'rgba(92, 215, 211, 0.16)',
+        )};
+        --accent-fog: ${withAlpha(
+          darkTheme.accentColor,
+          0.1,
+          'rgba(92, 215, 211, 0.1)',
+        )};
+        --accent-glow: ${withAlpha(
+          darkTheme.accentColor,
+          0.28,
+          'rgba(92, 215, 211, 0.28)',
+        )};
+        --bg: ${darkTheme.backgroundColor};
+        --surface: ${darkTheme.surfaceColor};
+        --surface-soft: ${withAlpha(
+          darkTheme.surfaceColor,
+          0.94,
+          darkTheme.surfaceColor,
+        )};
+        --text: ${darkTheme.textColor};
+        --text-soft: ${withAlpha(
+          darkTheme.textColor,
+          0.76,
+          'rgba(236, 253, 255, 0.76)',
+        )};
+        --border: ${darkTheme.borderColor};
+        --border-soft: ${withAlpha(
+          darkTheme.borderColor,
+          0.72,
+          darkTheme.borderColor,
+        )};
+        --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || darkTheme.surfaceColor};
+        --shadow: 0 28px 64px ${withAlpha(
+          darkTheme.accentColor,
+          0.18,
+          'rgba(0, 0, 0, 0.28)',
+        )};
       }
       .message.owner,
       .message.assistant,
       .message.system {
-        background: rgba(255,255,255,0.08);
+        background: rgba(255, 255, 255, 0.08);
+      }
+    }
+    @keyframes momicro-widget-caret {
+      0%, 50% {
+        opacity: 0.45;
+      }
+      50.01%, 100% {
+        opacity: 0;
       }
     }
   </style>
 </head>
 <body>
-  <div class="shell">
+  <button id="standaloneLauncher" class="standalone-launcher" type="button" hidden>
+    <span class="standalone-icon">
+      ${
+        launcherIconUrl
+          ? `<img src="${launcherIconUrl}" alt="${chatbot.settings.botName} icon" />`
+          : chatbot.settings.botName.slice(0, 1).toUpperCase()
+      }
+    </span>
+    <span class="standalone-copy">
+      <span class="standalone-title">${chatbot.settings.botName}</span>
+      <span class="standalone-subtitle">${chatbot.settings.title || chatbot.settings.botName}</span>
+    </span>
+  </button>
+  <div id="shell" class="shell">
     <header class="header">
       <div class="header-row">
         <div class="brand-lockup">
           <div class="brand-mark">
             ${
-              chatbot.settings.brand.logoUrl
-                ? `<img src="${chatbot.settings.brand.logoUrl}" alt="${chatbot.settings.botName} logo" />`
-                : chatbot.settings.botName.slice(0, 1)
+              brandIconUrl
+                ? `<img src="${brandIconUrl}" alt="${chatbot.settings.botName} logo" />`
+                : chatbot.settings.botName.slice(0, 1).toUpperCase()
             }
           </div>
           <div class="brand-copy">
+            <div class="eyebrow"><span>${chatbot.settings.title || chatbot.settings.botName}</span></div>
             <h1 class="title">${chatbot.settings.botName}</h1>
             <p class="subtitle">${chatbot.settings.initialMessage}</p>
           </div>
         </div>
         <div class="meta">
-          <span id="statusBadge" class="status-badge">Active</span>
+          <span id="statusBadge" class="status-badge active">Active</span>
+          <button id="hideChat" class="icon-button" type="button">Hide</button>
           <button id="endChat" class="end-chat" type="button">End Chat</button>
         </div>
+      </div>
+      <div class="header-tray">
+        <span class="info-chip">${responseModeLabel}</span>
+        <span class="info-chip">${sessionModeLabel}</span>
+        <span class="info-chip">${languageLabel}</span>
       </div>
     </header>
     <main id="messages" class="messages"></main>
@@ -371,11 +896,20 @@ class EmbedService {
         <textarea id="input" placeholder="${chatbot.settings.inputPlaceholder}"></textarea>
         <button id="send" class="send" type="button">Send</button>
       </div>
+      <div class="composer-meta">
+        <span>${
+          chatbot.settings.auth
+            ? 'This chat is linked to your website session when authClient is provided.'
+            : 'This chat works without website login.'
+        }</span>
+        <span>${activityLabel}</span>
+      </div>
     </footer>
   </div>
   <div id="overlay" class="overlay">
     <div class="card">
       <h2>${chatbot.settings.leadsFormTitle}</h2>
+      <p>Leave your details and continue chatting. Your session stays active for up to ${chatbot.settings.inactivityHours} hours after your last message.</p>
       <form id="leadForm"></form>
       <div class="actions">
         <button id="cancelLead" type="button" class="ghost">Cancel</button>
@@ -398,6 +932,8 @@ class EmbedService {
       const leadForm = document.getElementById('leadForm');
       const submitLead = document.getElementById('submitLead');
       const cancelLead = document.getElementById('cancelLead');
+      const hideChat = document.getElementById('hideChat');
+      const standaloneLauncher = document.getElementById('standaloneLauncher');
       const endChat = document.getElementById('endChat');
       const statusBadge = document.getElementById('statusBadge');
       const composer = document.getElementById('composer');
@@ -407,6 +943,8 @@ class EmbedService {
       let widgetToken = localStorage.getItem(storageKey) || '';
       let queuedMessage = '';
       let currentConversation = null;
+      const messageNodes = new Map();
+      const streamStates = new Map();
 
       const statusLabels = {
         active: 'Active',
@@ -414,19 +952,246 @@ class EmbedService {
         closed: 'Closed',
       };
 
-      const addMessage = (authorType, content) => {
-        const node = document.createElement('div');
-        node.className = 'message ' + authorType;
-        node.textContent = content;
-        messages.appendChild(node);
+      const isEmbedded = () => window.parent && window.parent !== window;
+
+      const setWidgetHidden = (hidden) => {
+        document.body.classList.toggle('widget-hidden', Boolean(hidden));
+        standaloneLauncher.hidden = !hidden;
+        if (!hidden) {
+          window.setTimeout(() => {
+            if (!input.disabled) input.focus();
+          }, 50);
+        }
+      };
+
+      const syncParentVisibility = (action) => {
+        if (!isEmbedded()) return;
+        window.parent.postMessage(
+          {
+            type: 'momicro-assist',
+            action,
+            chatbotId: runtime.chatbot.id,
+          },
+          '*',
+        );
+      };
+
+      const requestHideWidget = () => {
+        setWidgetHidden(true);
+        syncParentVisibility('hide');
+      };
+
+      const scrollMessagesToBottom = () => {
         messages.scrollTop = messages.scrollHeight;
       };
 
+      const clearStreamStates = () => {
+        streamStates.forEach((state) => {
+          if (state.timer) window.clearTimeout(state.timer);
+        });
+        streamStates.clear();
+      };
+
+      const ensureConversationMessages = () => {
+        if (!currentConversation) return [];
+        if (!Array.isArray(currentConversation.messages)) {
+          currentConversation.messages = [];
+        }
+        return currentConversation.messages;
+      };
+
+      const findConversationMessage = (messageId) =>
+        ensureConversationMessages().find((item) => item.id === messageId) || null;
+
+      const upsertConversationMessage = (message) => {
+        const items = ensureConversationMessages();
+        const index = items.findIndex((item) => item.id === message.id);
+        if (index === -1) {
+          const created = {
+            ...message,
+          };
+          items.push(created);
+          return created;
+        }
+
+        items[index] = {
+          ...items[index],
+          ...message,
+        };
+        return items[index];
+      };
+
+      const removeConversationMessage = (messageId) => {
+        const items = ensureConversationMessages();
+        const index = items.findIndex((item) => item.id === messageId);
+        if (index !== -1) items.splice(index, 1);
+      };
+
+      const createMessageNode = (message, options = {}) => {
+        const node = document.createElement('div');
+        node.className = 'message ' + (message.authorType || 'system');
+        node.classList.toggle('streaming', Boolean(options.streaming));
+
+        const contentNode = document.createElement('div');
+        contentNode.className = 'message-content';
+        contentNode.textContent = message.content || '';
+        node.appendChild(contentNode);
+
+        messages.appendChild(node);
+        if (message.id) {
+          messageNodes.set(message.id, {
+            node,
+            contentNode,
+          });
+        }
+        scrollMessagesToBottom();
+
+        return {
+          node,
+          contentNode,
+        };
+      };
+
+      const syncMessageNode = (message, options = {}) => {
+        if (!message?.id) {
+          return createMessageNode(message, options);
+        }
+
+        const existing = messageNodes.get(message.id);
+        if (!existing) {
+          return createMessageNode(message, options);
+        }
+
+        existing.node.className = 'message ' + (message.authorType || 'system');
+        existing.node.classList.toggle('streaming', Boolean(options.streaming));
+        existing.contentNode.textContent = message.content || '';
+        scrollMessagesToBottom();
+        return existing;
+      };
+
+      const addMessage = (authorType, content) => {
+        createMessageNode({
+          authorType,
+          content,
+        });
+      };
+
+      const settleStreamState = (messageId) => {
+        const state = streamStates.get(messageId);
+        if (!state) return;
+        if (state.timer || state.queue.length) return;
+
+        const record = messageNodes.get(messageId);
+        if (record) {
+          record.node.classList.remove('streaming');
+        }
+
+        if (state.failed && !findConversationMessage(messageId)?.content) {
+          record?.node.remove();
+          messageNodes.delete(messageId);
+          removeConversationMessage(messageId);
+        }
+
+        if (state.completed || state.failed) {
+          streamStates.delete(messageId);
+        }
+      };
+
+      const flushStreamQueue = (messageId) => {
+        const state = streamStates.get(messageId);
+        if (!state) return;
+
+        if (!state.queue.length) {
+          state.timer = null;
+          settleStreamState(messageId);
+          return;
+        }
+
+        const nextChunk = state.queue.shift();
+        const message = findConversationMessage(messageId);
+        if (!message) {
+          state.queue = [];
+          state.timer = null;
+          streamStates.delete(messageId);
+          return;
+        }
+
+        message.content = (message.content || '') + nextChunk;
+        syncMessageNode(message, {
+          streaming: true,
+        });
+
+        state.timer = window.setTimeout(() => {
+          flushStreamQueue(messageId);
+        }, 28);
+      };
+
+      const startStreamingMessage = (message) => {
+        const entry = upsertConversationMessage({
+          ...message,
+          content: message.content || '',
+        });
+        syncMessageNode(entry, {
+          streaming: true,
+        });
+      };
+
+      const queueStreamingChunk = (messageId, chunk) => {
+        let state = streamStates.get(messageId);
+        if (!state) {
+          state = {
+            queue: [],
+            timer: null,
+            completed: false,
+            failed: false,
+          };
+          streamStates.set(messageId, state);
+        }
+
+        state.queue.push(chunk);
+        if (!state.timer) {
+          state.timer = window.setTimeout(() => {
+            flushStreamQueue(messageId);
+          }, 28);
+        }
+      };
+
+      const completeStreamingMessage = (messageId) => {
+        const state = streamStates.get(messageId);
+        if (!state) {
+          const record = messageNodes.get(messageId);
+          if (record) record.node.classList.remove('streaming');
+          return;
+        }
+
+        state.completed = true;
+        settleStreamState(messageId);
+      };
+
+      const failStreamingMessage = (messageId) => {
+        let state = streamStates.get(messageId);
+        if (!state) {
+          state = {
+            queue: [],
+            timer: null,
+            completed: false,
+            failed: true,
+          };
+          streamStates.set(messageId, state);
+        } else {
+          state.failed = true;
+        }
+
+        settleStreamState(messageId);
+      };
+
       const renderConversation = (conversation) => {
+        clearStreamStates();
+        messageNodes.clear();
         messages.innerHTML = '';
         currentConversation = conversation;
         (conversation.messages || []).forEach((message) => {
-          addMessage(message.authorType, message.content);
+          syncMessageNode(message);
         });
         if (!conversation.messages || !conversation.messages.length) {
           addMessage('system', runtime.chatbot.settings.initialMessage);
@@ -450,6 +1215,7 @@ class EmbedService {
         currentConversation = conversation;
         const status = conversation?.status || 'active';
         statusBadge.textContent = statusLabels[status] || 'Active';
+        statusBadge.className = 'status-badge ' + status;
         const hideEndChat =
           runtime.chatbot.settings.auth ||
           !conversation ||
@@ -476,7 +1242,12 @@ class EmbedService {
       };
 
       const renderSuggestions = () => {
-        runtime.chatbot.settings.suggestedMessages.forEach((item) => {
+        suggestions.innerHTML = '';
+        const items = Array.isArray(runtime.chatbot.settings.suggestedMessages)
+          ? runtime.chatbot.settings.suggestedMessages.filter(Boolean)
+          : [];
+        suggestions.hidden = items.length === 0;
+        items.forEach((item) => {
           const button = document.createElement('button');
           button.type = 'button';
           button.className = 'chip';
@@ -563,11 +1334,50 @@ class EmbedService {
           if (packet.event === 'message.created') {
             const message = packet.payload.message;
             if (currentConversation) {
-              currentConversation.messages = currentConversation.messages || [];
-              currentConversation.messages.push(message);
+              upsertConversationMessage(message);
             }
-            addMessage(message.authorType, message.content);
+            syncMessageNode(message);
+            completeStreamingMessage(message.id);
             if (message.authorType !== 'visitor') queueVisitorRead();
+            return;
+          }
+
+          if (packet.event === 'message.stream.started') {
+            if (currentConversation) {
+              startStreamingMessage(packet.payload.message);
+            }
+            return;
+          }
+
+          if (packet.event === 'message.stream.delta') {
+            if (!currentConversation) return;
+            const targetMessage =
+              findConversationMessage(packet.payload.messageId) ||
+              upsertConversationMessage({
+                id: packet.payload.messageId,
+                authorType: 'assistant',
+                author: 'ai',
+                content: '',
+                createdAt: new Date(),
+                read: false,
+                readByOwner: true,
+                readByVisitor: false,
+              });
+            syncMessageNode(targetMessage, {
+              streaming: true,
+            });
+            queueStreamingChunk(packet.payload.messageId, packet.payload.chunk);
+            return;
+          }
+
+          if (packet.event === 'message.stream.completed') {
+            completeStreamingMessage(packet.payload.messageId);
+            queueVisitorRead();
+            return;
+          }
+
+          if (packet.event === 'message.stream.failed') {
+            failStreamingMessage(packet.payload.messageId);
             return;
           }
 
@@ -586,6 +1396,22 @@ class EmbedService {
           socket = null;
         });
       };
+
+      window.addEventListener('message', (event) => {
+        const data = event.data || {};
+        if (data.type !== 'momicro-assist' || data.chatbotId !== runtime.chatbot.id) {
+          return;
+        }
+
+        if (data.action === 'open') {
+          setWidgetHidden(false);
+          return;
+        }
+
+        if (data.action === 'hide') {
+          setWidgetHidden(true);
+        }
+      });
 
       const createSession = async () => {
         const visitor = {};
@@ -656,6 +1482,11 @@ class EmbedService {
 
       renderLeadForm();
       renderSuggestions();
+      hideChat.addEventListener('click', requestHideWidget);
+      standaloneLauncher.addEventListener('click', () => {
+        setWidgetHidden(false);
+        syncParentVisibility('open');
+      });
       endChat.addEventListener('click', () => {
         if (!socket || socket.readyState !== WebSocket.OPEN) return;
         if (!currentConversation || currentConversation.status === 'closed') return;
@@ -695,6 +1526,8 @@ class EmbedService {
         addMessage('system', runtime.chatbot.settings.initialMessage);
         applyComposerState(false, defaultPlaceholder);
       }
+
+      setWidgetHidden(false);
     })();
   </script>
 </body>
@@ -1002,9 +1835,27 @@ class EmbedService {
       border-radius: 22px;
       line-height: 1.55;
       font-size: 14px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+      transition: opacity 140ms ease, transform 140ms ease;
+    }
+    .message-content {
       white-space: pre-wrap;
       word-break: break-word;
-      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+    }
+    .message.streaming {
+      opacity: 0.96;
+    }
+    .message.streaming .message-content::after {
+      content: '';
+      display: inline-block;
+      width: 0.42em;
+      height: 1em;
+      margin-left: 2px;
+      border-radius: 999px;
+      background: currentColor;
+      opacity: 0.45;
+      vertical-align: -0.12em;
+      animation: momicro-dashboard-caret 0.9s steps(1, end) infinite;
     }
     .message.visitor {
       align-self: flex-start;
@@ -1085,6 +1936,14 @@ class EmbedService {
         max-width: 100%;
       }
     }
+    @keyframes momicro-dashboard-caret {
+      0%, 50% {
+        opacity: 0.45;
+      }
+      50.01%, 100% {
+        opacity: 0;
+      }
+    }
   </style>
 </head>
 <body>
@@ -1152,6 +2011,8 @@ class EmbedService {
         socketReady: false,
         subscribedConversationId: '',
       };
+      const threadMessageNodes = new Map();
+      const threadStreamStates = new Map();
 
       const formatTime = (value) => {
         if (!value) return '';
@@ -1186,6 +2047,37 @@ class EmbedService {
         visitor: conversation?.visitor || {},
         messages: Array.isArray(conversation?.messages) ? conversation.messages : [],
       });
+
+      const clearThreadStreamStates = () => {
+        threadStreamStates.forEach((state) => {
+          if (state.timer) window.clearTimeout(state.timer);
+        });
+        threadStreamStates.clear();
+      };
+
+      const resetThreadRenderState = () => {
+        threadMessageNodes.clear();
+        clearThreadStreamStates();
+      };
+
+      const getMessageSource = (message) =>
+        message.authorType === 'assistant'
+          ? 'AI'
+          : message.authorType === 'owner'
+            ? 'Owner'
+            : 'Visitor';
+
+      const isMessageRead = (message) =>
+        message.authorType === 'visitor'
+          ? message.readByOwner
+          : message.readByVisitor;
+
+      const buildMessageMeta = (message) =>
+        getMessageSource(message) +
+        ' · ' +
+        formatTime(message.createdAt) +
+        ' · ' +
+        (isMessageRead(message) ? 'Read' : 'Unread');
 
       const compareActivity = (left, right) => {
         const leftTime = new Date(
@@ -1255,7 +2147,11 @@ class EmbedService {
         }
       };
 
-      const updateConversation = (conversationId, updater) => {
+      const updateConversation = (
+        conversationId,
+        updater,
+        options = { renderSelected: true },
+      ) => {
         const index = state.conversations.findIndex((item) => item.id === conversationId);
         if (index === -1) return;
         state.conversations[index] = normalizeConversation(
@@ -1263,9 +2159,236 @@ class EmbedService {
         );
         state.conversations.sort(compareActivity);
         renderConversationList();
-        if (state.selectedConversationId === conversationId) {
+        if (
+          options.renderSelected !== false &&
+          state.selectedConversationId === conversationId
+        ) {
           renderSelectedConversation();
         }
+      };
+
+      const findConversationMessage = (conversationId, messageId) => {
+        const conversation =
+          state.conversations.find((item) => item.id === conversationId) || null;
+        if (!conversation) return null;
+        return (
+          (conversation.messages || []).find((item) => item.id === messageId) || null
+        );
+      };
+
+      const upsertConversationMessage = (conversationId, message) => {
+        let targetMessage = null;
+
+        updateConversation(
+          conversationId,
+          (conversation) => {
+            const messages = Array.isArray(conversation.messages)
+              ? [...conversation.messages]
+              : [];
+            const index = messages.findIndex((item) => item.id === message.id);
+
+            if (index === -1) {
+              targetMessage = {
+                ...message,
+              };
+              messages.push(targetMessage);
+            } else {
+              messages[index] = {
+                ...messages[index],
+                ...message,
+              };
+              targetMessage = messages[index];
+            }
+
+            return {
+              ...conversation,
+              messages,
+            };
+          },
+          { renderSelected: false },
+        );
+
+        return targetMessage;
+      };
+
+      const removeConversationMessage = (conversationId, messageId) => {
+        updateConversation(
+          conversationId,
+          (conversation) => ({
+            ...conversation,
+            messages: (conversation.messages || []).filter(
+              (item) => item.id !== messageId
+            ),
+          }),
+          { renderSelected: false },
+        );
+      };
+
+      const createThreadMessageNode = (message, options = {}) => {
+        const node = document.createElement('div');
+        node.className = 'message ' + (message.authorType || 'visitor');
+        node.classList.toggle('streaming', Boolean(options.streaming));
+
+        const content = document.createElement('div');
+        content.className = 'message-content';
+        content.textContent = message.content || '';
+        node.appendChild(content);
+
+        const meta = document.createElement('div');
+        meta.className = 'message-meta';
+        meta.textContent = buildMessageMeta(message);
+        node.appendChild(meta);
+
+        threadBody.appendChild(node);
+        if (message.id) {
+          threadMessageNodes.set(message.id, {
+            node,
+            content,
+            meta,
+          });
+        }
+        threadBody.scrollTop = threadBody.scrollHeight;
+
+        return {
+          node,
+          content,
+          meta,
+        };
+      };
+
+      const syncThreadMessageNode = (message, options = {}) => {
+        if (!message?.id) {
+          return createThreadMessageNode(message, options);
+        }
+
+        const existing = threadMessageNodes.get(message.id);
+        if (!existing) {
+          return createThreadMessageNode(message, options);
+        }
+
+        existing.node.className = 'message ' + (message.authorType || 'visitor');
+        existing.node.classList.toggle('streaming', Boolean(options.streaming));
+        existing.content.textContent = message.content || '';
+        existing.meta.textContent = buildMessageMeta(message);
+        threadBody.scrollTop = threadBody.scrollHeight;
+        return existing;
+      };
+
+      const settleThreadStreamState = (conversationId, messageId) => {
+        const state = threadStreamStates.get(messageId);
+        if (!state || state.timer || state.queue.length) return;
+
+        const record = threadMessageNodes.get(messageId);
+        if (record) {
+          record.node.classList.remove('streaming');
+        }
+
+        if (state.failed && !findConversationMessage(conversationId, messageId)?.content) {
+          record?.node.remove();
+          threadMessageNodes.delete(messageId);
+          removeConversationMessage(conversationId, messageId);
+        }
+
+        if (state.completed || state.failed) {
+          threadStreamStates.delete(messageId);
+        }
+      };
+
+      const flushThreadStreamQueue = (conversationId, messageId) => {
+        const state = threadStreamStates.get(messageId);
+        if (!state) return;
+
+        if (!state.queue.length) {
+          state.timer = null;
+          settleThreadStreamState(conversationId, messageId);
+          return;
+        }
+
+        const nextChunk = state.queue.shift();
+        const message = findConversationMessage(conversationId, messageId);
+        if (!message) {
+          state.queue = [];
+          state.timer = null;
+          threadStreamStates.delete(messageId);
+          return;
+        }
+
+        message.content = (message.content || '') + nextChunk;
+        syncThreadMessageNode(message, {
+          streaming: true,
+        });
+        updateConversation(
+          conversationId,
+          (conversation) => ({
+            ...conversation,
+            lastMessagePreview: message.content.slice(0, 120),
+            lastMessageAt: message.createdAt,
+            updatedAt: message.createdAt,
+          }),
+          { renderSelected: false },
+        );
+
+        state.timer = window.setTimeout(() => {
+          flushThreadStreamQueue(conversationId, messageId);
+        }, 28);
+      };
+
+      const startThreadStreamingMessage = (conversationId, message) => {
+        if (state.selectedConversationId !== conversationId) return;
+        syncThreadMessageNode(message, {
+          streaming: true,
+        });
+      };
+
+      const queueThreadStreamingChunk = (conversationId, messageId, chunk) => {
+        if (state.selectedConversationId !== conversationId) return;
+
+        let stateEntry = threadStreamStates.get(messageId);
+        if (!stateEntry) {
+          stateEntry = {
+            queue: [],
+            timer: null,
+            completed: false,
+            failed: false,
+          };
+          threadStreamStates.set(messageId, stateEntry);
+        }
+
+        stateEntry.queue.push(chunk);
+        if (!stateEntry.timer) {
+          stateEntry.timer = window.setTimeout(() => {
+            flushThreadStreamQueue(conversationId, messageId);
+          }, 28);
+        }
+      };
+
+      const completeThreadStreamingMessage = (conversationId, messageId) => {
+        const stateEntry = threadStreamStates.get(messageId);
+        if (!stateEntry) {
+          const record = threadMessageNodes.get(messageId);
+          if (record) record.node.classList.remove('streaming');
+          return;
+        }
+
+        stateEntry.completed = true;
+        settleThreadStreamState(conversationId, messageId);
+      };
+
+      const failThreadStreamingMessage = (conversationId, messageId) => {
+        let stateEntry = threadStreamStates.get(messageId);
+        if (!stateEntry) {
+          stateEntry = {
+            queue: [],
+            timer: null,
+            completed: false,
+            failed: true,
+          };
+          threadStreamStates.set(messageId, stateEntry);
+        } else {
+          stateEntry.failed = true;
+        }
+
+        settleThreadStreamState(conversationId, messageId);
       };
 
       const renderConversationList = () => {
@@ -1330,6 +2453,7 @@ class EmbedService {
       };
 
       const renderSelectedConversation = () => {
+        resetThreadRenderState();
         const conversation = currentConversation();
         if (!conversation) {
           threadTitle.textContent = 'Select a conversation';
@@ -1367,34 +2491,7 @@ class EmbedService {
         }
 
         conversation.messages.forEach((message) => {
-          const node = document.createElement('div');
-          node.className = 'message ' + message.authorType;
-
-          const content = document.createElement('div');
-          content.textContent = message.content;
-          node.appendChild(content);
-
-          const meta = document.createElement('div');
-          meta.className = 'message-meta';
-          const source =
-            message.authorType === 'assistant'
-              ? 'AI'
-              : message.authorType === 'owner'
-                ? 'Owner'
-                : 'Visitor';
-          const read =
-            message.authorType === 'visitor'
-              ? message.readByOwner
-              : message.readByVisitor;
-          meta.textContent =
-            source +
-            ' · ' +
-            formatTime(message.createdAt) +
-            ' · ' +
-            (read ? 'Read' : 'Unread');
-          node.appendChild(meta);
-
-          threadBody.appendChild(node);
+          syncThreadMessageNode(message);
         });
 
         threadBody.scrollTop = threadBody.scrollHeight;
@@ -1459,11 +2556,18 @@ class EmbedService {
             visitor: {},
             messages: [],
             unreadForOwner: 0,
-            status: 'active',
-          };
+          status: 'active',
+        };
         const hasMessage = (existing.messages || []).some((item) => item.id === message.id);
         const nextMessages = hasMessage
-          ? existing.messages || []
+          ? (existing.messages || []).map((item) =>
+              item.id === message.id
+                ? {
+                    ...item,
+                    ...message,
+                  }
+                : item
+            )
           : [...(existing.messages || []), message];
 
         upsertConversation({
@@ -1484,7 +2588,8 @@ class EmbedService {
         });
 
         if (conversationId === state.selectedConversationId) {
-          renderSelectedConversation();
+          syncThreadMessageNode(message);
+          completeThreadStreamingMessage(conversationId, message.id);
           if (message.authorType === 'visitor') {
             try {
               await markConversationRead(conversationId);
@@ -1530,6 +2635,98 @@ class EmbedService {
 
           if (packet.event === 'message.created') {
             await handleMessageCreated(packet.payload);
+            return;
+          }
+
+          if (packet.event === 'message.stream.started') {
+            const { conversationId, message } = packet.payload;
+            upsertConversation({
+              id: conversationId,
+              visitor: {},
+              messages: [],
+              unreadForOwner: 0,
+              status: 'active',
+            });
+            const streamedMessage = upsertConversationMessage(conversationId, message);
+            updateConversation(
+              conversationId,
+              (conversation) => ({
+                ...conversation,
+                lastMessagePreview: '',
+                lastMessageAt: message.createdAt,
+                updatedAt: message.createdAt,
+              }),
+              { renderSelected: false },
+            );
+            startThreadStreamingMessage(conversationId, streamedMessage || message);
+            return;
+          }
+
+          if (packet.event === 'message.stream.delta') {
+            const { conversationId, messageId, chunk } = packet.payload;
+            const isSelectedConversation =
+              state.selectedConversationId === conversationId;
+            const streamedMessage =
+              findConversationMessage(conversationId, messageId) ||
+              upsertConversationMessage(conversationId, {
+                id: messageId,
+                authorType: 'assistant',
+                author: 'ai',
+                content: '',
+                createdAt: new Date(),
+                read: false,
+                readByOwner: true,
+                readByVisitor: false,
+              });
+
+            if (streamedMessage && !isSelectedConversation) {
+              updateConversation(
+                conversationId,
+                (conversation) => ({
+                  ...conversation,
+                  messages: (conversation.messages || []).map((message) =>
+                    message.id === messageId
+                      ? {
+                          ...message,
+                          content: (message.content || '') + chunk,
+                        }
+                      : message
+                  ),
+                }),
+                { renderSelected: false },
+              );
+            }
+
+            if (streamedMessage) {
+              updateConversation(
+                conversationId,
+                (conversation) => ({
+                  ...conversation,
+                  lastMessagePreview: (
+                    (streamedMessage.content || '') + chunk
+                  ).slice(0, 120),
+                }),
+                { renderSelected: false },
+              );
+            }
+
+            queueThreadStreamingChunk(conversationId, messageId, chunk);
+            return;
+          }
+
+          if (packet.event === 'message.stream.completed') {
+            completeThreadStreamingMessage(
+              packet.payload.conversationId,
+              packet.payload.messageId,
+            );
+            return;
+          }
+
+          if (packet.event === 'message.stream.failed') {
+            failThreadStreamingMessage(
+              packet.payload.conversationId,
+              packet.payload.messageId,
+            );
             return;
           }
 

@@ -19,6 +19,21 @@ export interface MessageCreatedPayload {
   message: ConversationMessage;
 }
 
+export interface MessageStreamStartedPayload extends MessageCreatedPayload {}
+
+export interface MessageStreamDeltaPayload {
+  conversationId: string;
+  chatbotId: string;
+  messageId: string;
+  chunk: string;
+}
+
+export interface MessageStreamCompletedPayload {
+  conversationId: string;
+  chatbotId: string;
+  messageId: string;
+}
+
 export class ConversationService {
   constructor(args: {
     chatbotService: ChatbotService;

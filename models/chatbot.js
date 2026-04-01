@@ -46,7 +46,7 @@ module.exports = {
       widgetLocation: {
         type: String,
         default: 'right',
-        enum: ['left', 'right'],
+        enum: ['left', 'right', 'top-left', 'top-right'],
       },
       rounded: { type: Boolean, default: true },
       domains: { type: [String], default: ['*'] },

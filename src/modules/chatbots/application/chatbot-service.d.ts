@@ -81,6 +81,7 @@ export class ChatbotService {
   getLanguageOptions(): {
     defaultLanguage: string;
     allowedLanguages: string[];
+    minimumSelectedLanguages: number;
   };
   delete(actor: Actor, chatbotId: string): Promise<{ deleted: true }>;
   getPublicWidget(
@@ -96,6 +97,7 @@ export class ChatbotService {
     chatbotId: string;
     scriptUrl: string;
     iframeUrl: string;
+    dashboardInstallEnabled: boolean;
     dashboardScriptUrl: string;
     dashboardIframeUrl: string;
     scriptSnippet: string;

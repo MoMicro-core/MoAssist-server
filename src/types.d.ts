@@ -11,7 +11,7 @@ export type PremiumStatus =
   | 'canceled';
 export type BillingTierCapability = string;
 export type ChatbotStatus = 'draft' | 'published';
-export type WidgetLocation = 'left' | 'right';
+export type WidgetLocation = 'left' | 'right' | 'top-left' | 'top-right';
 export type ResponseLength = 'short' | 'medium' | 'long';
 export type ConversationStatus = 'active' | 'pending' | 'closed';
 export type ChatAuthorType = 'visitor' | 'owner' | 'assistant';
@@ -136,6 +136,7 @@ export interface ChatbotSettings {
   auth: boolean;
   inactivityHours: number;
   defaultLanguage: string;
+  enabledLanguages: string[];
   widgetLocation: WidgetLocation;
   rounded: boolean;
   domains: string[];
@@ -397,6 +398,11 @@ export interface OpenAIGateway {
   createChatCompletion(args: {
     messages: ChatMessage[];
     temperature?: number;
+  }): Promise<string>;
+  streamChatCompletion(args: {
+    messages: ChatMessage[];
+    temperature?: number;
+    onTextDelta?: (chunk: string) => Promise<void> | void;
   }): Promise<string>;
   createEmbedding(input: string): Promise<number[]>;
   createEmbeddings(input: string[]): Promise<number[][]>;
