@@ -89,6 +89,12 @@ export class ChatbotService {
     origin?: string,
     preferredLanguage?: string,
   ): Promise<PublicChatbot>;
+  getPreviewWidget(
+    actor: Actor,
+    chatbotId: string,
+    patchSettings?: Partial<ChatbotSettings>,
+    preferredLanguage?: string,
+  ): Promise<PublicChatbot>;
   getInstallCode(
     actor: Actor,
     chatbotId: string,

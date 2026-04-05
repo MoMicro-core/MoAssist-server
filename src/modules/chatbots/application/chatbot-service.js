@@ -791,6 +791,47 @@ class ChatbotService {
     return settings;
   }
 
+  buildPreviewSettings(rawSettings = {}, preferredLanguage = '') {
+    const settings = deepMerge(createDefaultChatbotSettings(), rawSettings);
+    this.normalizeConversationSettings(settings, false);
+    const fallbackLanguage = this.normalizeDefaultLanguage(
+      settings.defaultLanguage,
+      false,
+    );
+    settings.enabledLanguages = this.normalizeEnabledLanguages(
+      settings.enabledLanguages,
+      fallbackLanguage,
+      false,
+    );
+    const enabledLanguages = settings.enabledLanguages;
+    const preferredResolved = this.resolvePreferredLanguage(
+      preferredLanguage,
+      fallbackLanguage,
+    );
+    const selectedLanguage = enabledLanguages.includes(preferredResolved)
+      ? preferredResolved
+      : fallbackLanguage;
+
+    const sourcePack = extractLanguagePack(settings);
+    const translations = this.normalizeTranslations(
+      settings.translations,
+      sourcePack,
+      enabledLanguages,
+    );
+    const selectedPack =
+      selectedLanguage === fallbackLanguage
+        ? sourcePack
+        : translations[selectedLanguage] || sourcePack;
+
+    settings.defaultLanguage = selectedLanguage;
+    applyLanguagePack(settings, selectedPack);
+
+    delete settings.translations;
+    delete settings.translationSourceHash;
+
+    return settings;
+  }
+
   async list(actor) {
     const chatbots =
       actor.role === 'admin'
@@ -1007,6 +1048,39 @@ class ChatbotService {
         this.applyTierAccess(chatbot, chatbot.settings),
         preferredLanguage,
       ),
+    };
+  }
+
+  async getPreviewWidget(
+    actor,
+    chatbotId,
+    patchSettings = {},
+    preferredLanguage = '',
+  ) {
+    const document = await this.getManageableDocument(actor, chatbotId);
+    const requestedPatch =
+      patchSettings && typeof patchSettings === 'object' ? patchSettings : {};
+
+    this.assertRequestedSettingsAccess(document.toObject(), requestedPatch);
+
+    const currentSettings = this.applyTierAccess(
+      document.toObject(),
+      document.settings.toObject(),
+    );
+    const mergedSettings = deepMerge(currentSettings, requestedPatch);
+    const previewSettings = this.buildPreviewSettings(
+      this.applyTierAccess(document.toObject(), mergedSettings),
+      preferredLanguage,
+    );
+    const plain = document.toObject();
+
+    return {
+      id: plain.id,
+      ownerUid: plain.ownerUid,
+      premiumStatus: plain.premiumStatus,
+      premiumPlan: plain.premiumPlan,
+      premiumCurrentPeriodEnd: plain.premiumCurrentPeriodEnd,
+      settings: previewSettings,
     };
   }
 

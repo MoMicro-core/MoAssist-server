@@ -1,5 +1,6 @@
 'use strict';
 
+const { getBaseUrl } = require('../../src/shared/application/url');
 const { BadRequestError } = require('../../src/shared/application/errors');
 
 const collectMultipartFiles = async (request) => {
@@ -41,7 +42,7 @@ const collectSingleMultipartFile = async (request) => {
   return selected;
 };
 
-module.exports = ({ services }) => [
+module.exports = ({ services, fastify }) => [
   {
     method: 'GET',
     url: '/v1/chatbots',
@@ -187,6 +188,46 @@ module.exports = ({ services }) => [
         request.params.chatbotId,
         `${request.protocol}://${request.headers.host}`.replace(/\/$/, ''),
       ),
+  },
+  {
+    method: 'POST',
+    url: '/v1/chatbots/:chatbotId/preview/widget',
+    access: ['user', 'admin'],
+    schema: {
+      tags: ['Chatbots'],
+      summary: 'Render a live chatbot widget preview from draft settings',
+      body: {
+        type: 'object',
+        properties: {
+          settings: { type: 'object' },
+          mode: {
+            type: 'string',
+            enum: ['light', 'dark'],
+          },
+          selectedPart: { type: 'string' },
+        },
+      },
+    },
+    handler: async (request) => {
+      const chatbot = await services.chatbotService.getPreviewWidget(
+        request.appSession,
+        request.params.chatbotId,
+        request.body?.settings || {},
+      );
+      const baseUrl = getBaseUrl(request, fastify.config.environment.appUrl);
+
+      return {
+        html: services.embedService.renderIframe({
+          chatbot,
+          baseUrl,
+          preview: {
+            enabled: true,
+            mode: request.body?.mode || 'light',
+            selectedPart: request.body?.selectedPart || 'launcher',
+          },
+        }),
+      };
+    },
   },
   {
     method: 'GET',

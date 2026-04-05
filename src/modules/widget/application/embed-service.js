@@ -49,6 +49,49 @@ const formatLanguageLabel = (value = '') =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ') || 'English';
 
+const createPreviewConversation = (chatbot) => {
+  const firstSuggestion =
+    chatbot.settings.suggestedMessages?.find(Boolean) ||
+    'I need help choosing the right option.';
+  const assistantReply = chatbot.settings.ai.enabled
+    ? 'Absolutely. I can answer questions about products, delivery, pricing, and returns.'
+    : 'A teammate will reply here with product, delivery, or order help.';
+
+  return {
+    status: 'active',
+    messages: [
+      {
+        id: 'preview-assistant-1',
+        authorType: 'assistant',
+        author: chatbot.settings.ai.enabled ? 'ai' : 'human',
+        content:
+          chatbot.settings.initialMessage || 'Hi. How can I help you today?',
+        read: true,
+        readByOwner: true,
+        readByVisitor: true,
+      },
+      {
+        id: 'preview-visitor-1',
+        authorType: 'visitor',
+        author: 'human',
+        content: firstSuggestion,
+        read: true,
+        readByOwner: true,
+        readByVisitor: true,
+      },
+      {
+        id: 'preview-assistant-2',
+        authorType: chatbot.settings.ai.enabled ? 'assistant' : 'owner',
+        author: chatbot.settings.ai.enabled ? 'ai' : 'human',
+        content: assistantReply,
+        read: true,
+        readByOwner: true,
+        readByVisitor: true,
+      },
+    ],
+  };
+};
+
 class EmbedService {
   renderScript({ chatbot, baseUrl }) {
     const language = chatbot.settings.defaultLanguage || 'english';
@@ -87,7 +130,6 @@ class EmbedService {
     const launcherIconUrl =
       chatbot.settings.brand.bubbleIconUrl || chatbot.settings.brand.logoUrl;
     const launcherTitle = chatbot.settings.botName;
-    const launcherSubtitle = chatbot.settings.title || chatbot.settings.botName;
     const launcherInitial = chatbot.settings.botName.slice(0, 1).toUpperCase();
 
     return `
@@ -173,7 +215,7 @@ class EmbedService {
   }
   var copy = document.createElement('span');
   copy.style.display = 'grid';
-  copy.style.gap = '4px';
+  copy.style.gap = '0';
   copy.style.minWidth = '0';
   var copyTitle = document.createElement('span');
   copyTitle.textContent = ${escapeScript(launcherTitle)};
@@ -183,18 +225,7 @@ class EmbedService {
   copyTitle.style.whiteSpace = 'nowrap';
   copyTitle.style.overflow = 'hidden';
   copyTitle.style.textOverflow = 'ellipsis';
-  var copySubtitle = document.createElement('span');
-  copySubtitle.textContent = ${escapeScript(launcherSubtitle)};
-  copySubtitle.style.fontSize = '12px';
-  copySubtitle.style.lineHeight = '1.2';
-  copySubtitle.style.color = ${escapeScript(
-    withAlpha(text, 0.72, 'rgba(15, 23, 42, 0.72)'),
-  )};
-  copySubtitle.style.whiteSpace = 'nowrap';
-  copySubtitle.style.overflow = 'hidden';
-  copySubtitle.style.textOverflow = 'ellipsis';
   copy.appendChild(copyTitle);
-  copy.appendChild(copySubtitle);
   button.appendChild(icon);
   button.appendChild(copy);
   var panel = document.createElement('div');
@@ -278,10 +309,13 @@ class EmbedService {
 `.trim();
   }
 
-  renderIframe({ chatbot, baseUrl, authClient = '' }) {
+  renderIframe({ chatbot, baseUrl, authClient = '', preview = null }) {
     const websocketUrl = `${toWebsocketUrl(baseUrl)}/ws`;
     const lightTheme = chatbot.settings.theme.light;
     const darkTheme = chatbot.settings.theme.dark;
+    const widgetLocation = chatbot.settings.widgetLocation || 'right';
+    const previewEnabled = Boolean(preview?.enabled);
+    const previewMode = preview?.mode === 'dark' ? 'dark' : 'light';
     const rounded = chatbot.settings.rounded !== false;
     const radiusXl = rounded ? '30px' : '20px';
     const radiusLg = rounded ? '24px' : '16px';
@@ -305,6 +339,14 @@ class EmbedService {
       websocketUrl,
       authClient,
     };
+    if (previewEnabled) {
+      payload.preview = {
+        enabled: true,
+        mode: previewMode,
+        selectedPart: preview?.selectedPart || 'launcher',
+        conversation: createPreviewConversation(chatbot),
+      };
+    }
 
     return `<!DOCTYPE html>
 <html lang="${chatbot.settings.defaultLanguage || 'english'}">
@@ -382,6 +424,114 @@ class EmbedService {
       grid-template-rows: auto 1fr auto;
       background: linear-gradient(180deg, var(--surface-soft), var(--surface));
     }
+    body.preview {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: transparent;
+    }
+    body.preview.preview-light {
+      --accent: ${lightTheme.accentColor};
+      --accent-text: ${lightTheme.accentTextColor};
+      --accent-soft: ${withAlpha(
+        lightTheme.accentColor,
+        0.14,
+        'rgba(9, 154, 217, 0.14)',
+      )};
+      --accent-fog: ${withAlpha(
+        lightTheme.accentColor,
+        0.08,
+        'rgba(9, 154, 217, 0.08)',
+      )};
+      --accent-glow: ${withAlpha(
+        lightTheme.accentColor,
+        0.24,
+        'rgba(9, 154, 217, 0.24)',
+      )};
+      --bg: ${lightTheme.backgroundColor};
+      --surface: ${lightTheme.surfaceColor};
+      --surface-soft: ${withAlpha(
+        lightTheme.surfaceColor,
+        0.92,
+        lightTheme.surfaceColor,
+      )};
+      --text: ${lightTheme.textColor};
+      --text-soft: ${withAlpha(
+        lightTheme.textColor,
+        0.72,
+        'rgba(15, 23, 42, 0.72)',
+      )};
+      --border: ${lightTheme.borderColor};
+      --border-soft: ${withAlpha(
+        lightTheme.borderColor,
+        0.65,
+        lightTheme.borderColor,
+      )};
+      --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || lightTheme.surfaceColor};
+      --shadow: 0 28px 64px ${withAlpha(
+        lightTheme.accentColor,
+        0.18,
+        'rgba(15, 23, 42, 0.18)',
+      )};
+    }
+    body.preview.preview-dark {
+      --accent: ${darkTheme.accentColor};
+      --accent-text: ${darkTheme.accentTextColor};
+      --accent-soft: ${withAlpha(
+        darkTheme.accentColor,
+        0.16,
+        'rgba(92, 215, 211, 0.16)',
+      )};
+      --accent-fog: ${withAlpha(
+        darkTheme.accentColor,
+        0.1,
+        'rgba(92, 215, 211, 0.1)',
+      )};
+      --accent-glow: ${withAlpha(
+        darkTheme.accentColor,
+        0.28,
+        'rgba(92, 215, 211, 0.28)',
+      )};
+      --bg: ${darkTheme.backgroundColor};
+      --surface: ${darkTheme.surfaceColor};
+      --surface-soft: ${withAlpha(
+        darkTheme.surfaceColor,
+        0.94,
+        darkTheme.surfaceColor,
+      )};
+      --text: ${darkTheme.textColor};
+      --text-soft: ${withAlpha(
+        darkTheme.textColor,
+        0.76,
+        'rgba(236, 253, 255, 0.76)',
+      )};
+      --border: ${darkTheme.borderColor};
+      --border-soft: ${withAlpha(
+        darkTheme.borderColor,
+        0.72,
+        darkTheme.borderColor,
+      )};
+      --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || darkTheme.surfaceColor};
+      --shadow: 0 28px 64px ${withAlpha(
+        darkTheme.accentColor,
+        0.18,
+        'rgba(0, 0, 0, 0.28)',
+      )};
+    }
+    .preview-stage {
+      position: relative;
+      width: min(100%, 520px);
+      height: min(760px, 100vh);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    body.preview .shell {
+      width: min(420px, 100%);
+      height: min(700px, 100vh);
+      max-height: 100%;
+    }
     .standalone-launcher {
       position: fixed;
       right: 18px;
@@ -403,8 +553,39 @@ class EmbedService {
       cursor: pointer;
       text-align: left;
     }
+    body.preview .standalone-launcher {
+      position: absolute;
+      margin: 0;
+      z-index: 2;
+    }
+    body.preview .preview-stage.right .standalone-launcher {
+      right: 0;
+      bottom: 0;
+    }
+    body.preview .preview-stage.left .standalone-launcher {
+      left: 0;
+      bottom: 0;
+    }
+    body.preview .preview-stage.top-left .standalone-launcher {
+      left: 0;
+      top: 0;
+    }
+    body.preview .preview-stage.top-right .standalone-launcher {
+      right: 0;
+      top: 0;
+    }
     .standalone-launcher[hidden] {
       display: none;
+    }
+    body.preview [data-preview-part] {
+      cursor: pointer;
+    }
+    body.preview [data-preview-selected="true"] {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+    }
+    body.preview .message[data-preview-selected="true"] {
+      outline-offset: 2px;
     }
     .standalone-icon,
     .brand-mark {
@@ -492,11 +673,24 @@ class EmbedService {
       text-overflow: ellipsis;
     }
     .title {
-      margin: 10px 0 0;
+      margin: 0;
       font-size: 18px;
       font-weight: 800;
       letter-spacing: -0.02em;
       line-height: 1.05;
+    }
+    .title[contenteditable="plaintext-only"] {
+      outline: none;
+    }
+    .message-content[contenteditable="plaintext-only"] {
+      outline: none;
+    }
+    .chip[contenteditable="plaintext-only"] {
+      outline: none;
+    }
+    textarea.preview-placeholder-edit {
+      color: var(--text-soft);
+      font-style: normal;
     }
     .subtitle {
       margin: 6px 0 0;
@@ -846,8 +1040,9 @@ class EmbedService {
     }
   </style>
 </head>
-<body>
-  <button id="standaloneLauncher" class="standalone-launcher" type="button" hidden>
+<body${previewEnabled ? ` class="preview preview-${previewMode}"` : ''}>
+  ${previewEnabled ? `<div class="preview-stage ${widgetLocation}">` : ''}
+  <button id="standaloneLauncher" class="standalone-launcher" type="button" hidden data-preview-part="launcher">
     <span class="standalone-icon">
       ${
         launcherIconUrl
@@ -857,11 +1052,10 @@ class EmbedService {
     </span>
     <span class="standalone-copy">
       <span class="standalone-title">${chatbot.settings.botName}</span>
-      <span class="standalone-subtitle">${chatbot.settings.title || chatbot.settings.botName}</span>
     </span>
   </button>
   <div id="shell" class="shell">
-    <header class="header">
+    <header class="header" data-preview-part="header">
       <div class="header-row">
         <div class="brand-lockup">
           <div class="brand-mark">
@@ -872,9 +1066,7 @@ class EmbedService {
             }
           </div>
           <div class="brand-copy">
-            <div class="eyebrow"><span>${chatbot.settings.title || chatbot.settings.botName}</span></div>
-            <h1 class="title">${chatbot.settings.botName}</h1>
-            <p class="subtitle">${chatbot.settings.initialMessage}</p>
+            <h1 id="previewBotName" class="title"${previewEnabled ? ' data-preview-editable="true" data-preview-field="botName" contenteditable="plaintext-only"' : ''}>${chatbot.settings.botName}</h1>
           </div>
         </div>
         <div class="meta">
@@ -889,9 +1081,9 @@ class EmbedService {
         <span class="info-chip">${languageLabel}</span>
       </div>
     </header>
-    <main id="messages" class="messages"></main>
-    <footer id="composer" class="composer">
-      <div id="suggestions" class="suggestions"></div>
+    <main id="messages" class="messages" data-preview-part="canvas"></main>
+    <footer id="composer" class="composer" data-preview-part="composer">
+      <div id="suggestions" class="suggestions" data-preview-part="suggested"></div>
       <div class="row">
         <textarea id="input" placeholder="${chatbot.settings.inputPlaceholder}"></textarea>
         <button id="send" class="send" type="button">Send</button>
@@ -906,6 +1098,7 @@ class EmbedService {
       </div>
     </footer>
   </div>
+  ${previewEnabled ? '</div>' : ''}
   <div id="overlay" class="overlay">
     <div class="card">
       <h2>${chatbot.settings.leadsFormTitle}</h2>
@@ -923,6 +1116,8 @@ class EmbedService {
   <script>
     (() => {
       const runtime = window.MOMICRO_WIDGET;
+      const preview = runtime.preview || null;
+      const previewEnabled = Boolean(preview && preview.enabled);
       const storageKey = 'momicro-assist-widget:' + runtime.chatbot.id;
       const messages = document.getElementById('messages');
       const input = document.getElementById('input');
@@ -954,10 +1149,110 @@ class EmbedService {
 
       const isEmbedded = () => window.parent && window.parent !== window;
 
+      const emitPreviewChange = (payload) => {
+        if (!previewEnabled || !isEmbedded()) return;
+        window.parent.postMessage(
+          {
+            type: 'momicro-assist-preview',
+            action: 'change',
+            chatbotId: runtime.chatbot.id,
+            ...payload,
+          },
+          '*',
+        );
+      };
+
+      const bindPreviewEditable = (element, descriptor = {}) => {
+        if (!previewEnabled || !element || !descriptor.field) return;
+        element.setAttribute('data-preview-editable', 'true');
+
+        const commit = () => {
+          const rawValue =
+            typeof element.value === 'string'
+              ? element.value
+              : element.textContent || '';
+          emitPreviewChange({
+            field: descriptor.field,
+            index: descriptor.index,
+            value: rawValue.replace(/\u00a0/g, ' ').trim(),
+          });
+        };
+
+        element.addEventListener('blur', commit);
+
+        if (typeof element.value !== 'string') {
+          element.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              element.blur();
+            }
+          });
+        }
+      };
+
+      const setPreviewSelection = (part) => {
+        document
+          .querySelectorAll('[data-preview-selected="true"]')
+          .forEach((node) => {
+            node.removeAttribute('data-preview-selected');
+          });
+
+        if (!part) return;
+
+        document
+          .querySelectorAll('[data-preview-part="' + part + '"]')
+          .forEach((node) => {
+            node.setAttribute('data-preview-selected', 'true');
+          });
+      };
+
+      const bindPreviewSelection = () => {
+        document.addEventListener(
+          'click',
+          (event) => {
+            const target = event.target.closest('[data-preview-part]');
+            if (!target) return;
+            const part = target.getAttribute('data-preview-part') || '';
+            const editable = event.target.closest('[data-preview-editable="true"]');
+            setPreviewSelection(part);
+            if (isEmbedded()) {
+              window.parent.postMessage(
+                {
+                  type: 'momicro-assist-preview',
+                  action: 'select',
+                  chatbotId: runtime.chatbot.id,
+                  part,
+                },
+                '*',
+              );
+            }
+            if (!editable) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          },
+          true,
+        );
+
+        window.addEventListener('message', (event) => {
+          const data = event.data || {};
+          if (
+            data.type !== 'momicro-assist-preview' ||
+            data.chatbotId !== runtime.chatbot.id
+          ) {
+            return;
+          }
+
+          if (data.action === 'highlight') {
+            setPreviewSelection(data.part || '');
+          }
+        });
+      };
+
       const setWidgetHidden = (hidden) => {
         document.body.classList.toggle('widget-hidden', Boolean(hidden));
         standaloneLauncher.hidden = !hidden;
-        if (!hidden) {
+        if (!hidden && !previewEnabled) {
           window.setTimeout(() => {
             if (!input.disabled) input.focus();
           }, 50);
@@ -1031,10 +1326,21 @@ class EmbedService {
         const node = document.createElement('div');
         node.className = 'message ' + (message.authorType || 'system');
         node.classList.toggle('streaming', Boolean(options.streaming));
+        node.setAttribute(
+          'data-preview-part',
+          message.authorType === 'visitor' ? 'visitorBubble' : 'assistantBubble',
+        );
 
         const contentNode = document.createElement('div');
         contentNode.className = 'message-content';
         contentNode.textContent = message.content || '';
+        if (previewEnabled && message.id === 'preview-assistant-1') {
+          contentNode.setAttribute('contenteditable', 'plaintext-only');
+          contentNode.setAttribute('data-preview-field', 'initialMessage');
+          bindPreviewEditable(contentNode, {
+            field: 'initialMessage',
+          });
+        }
         node.appendChild(contentNode);
 
         messages.appendChild(node);
@@ -1247,16 +1553,29 @@ class EmbedService {
           ? runtime.chatbot.settings.suggestedMessages.filter(Boolean)
           : [];
         suggestions.hidden = items.length === 0;
-        items.forEach((item) => {
-          const button = document.createElement('button');
-          button.type = 'button';
-          button.className = 'chip';
-          button.textContent = item;
-          button.addEventListener('click', () => {
-            input.value = item;
-            dispatchMessage();
-          });
-          suggestions.appendChild(button);
+        items.forEach((item, index) => {
+          if (previewEnabled) {
+            const chip = document.createElement('div');
+            chip.className = 'chip';
+            chip.textContent = item;
+            chip.setAttribute('contenteditable', 'plaintext-only');
+            chip.setAttribute('data-preview-field', 'suggestedMessages');
+            bindPreviewEditable(chip, {
+              field: 'suggestedMessages',
+              index,
+            });
+            suggestions.appendChild(chip);
+          } else {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'chip';
+            button.textContent = item;
+            button.addEventListener('click', () => {
+              input.value = item;
+              dispatchMessage();
+            });
+            suggestions.appendChild(button);
+          }
         });
       };
 
@@ -1276,6 +1595,29 @@ class EmbedService {
           leadForm.appendChild(wrapper);
         });
       };
+
+      if (previewEnabled) {
+        renderLeadForm();
+        renderSuggestions();
+        renderConversation(preview.conversation || {
+          status: 'active',
+          messages: [],
+        });
+        applyComposerState(false, defaultPlaceholder);
+        input.value = defaultPlaceholder;
+        input.placeholder = '';
+        input.classList.add('preview-placeholder-edit');
+        bindPreviewEditable(input, {
+          field: 'inputPlaceholder',
+        });
+        bindPreviewEditable(document.getElementById('previewBotName'), {
+          field: 'botName',
+        });
+        setWidgetHidden(false);
+        bindPreviewSelection();
+        setPreviewSelection(preview.selectedPart || 'launcher');
+        return;
+      }
 
       const handleSocketError = async (packet) => {
         const message = packet?.payload?.message || 'Widget request failed';

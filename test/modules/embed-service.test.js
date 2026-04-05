@@ -91,4 +91,24 @@ describe('embed service', () => {
     expect(html).toContain('https://cdn.example.com/bubble.png');
     expect(html).toContain('--radius-xl: 20px;');
   });
+
+  test('iframe preview renders the live widget in preview mode without relying on the normal boot flow', () => {
+    const service = new EmbedService();
+    const html = service.renderIframe({
+      chatbot: createChatbot({ widgetLocation: 'top-right' }),
+      baseUrl: 'https://api.example.com',
+      preview: {
+        enabled: true,
+        mode: 'dark',
+        selectedPart: 'composer',
+      },
+    });
+
+    expect(html).toContain('<body class="preview preview-dark">');
+    expect(html).toContain('<div class="preview-stage top-right">');
+    expect(html).toContain('data-preview-part="composer"');
+    expect(html).toContain(`type: 'momicro-assist-preview'`);
+    expect(html).toContain('"selectedPart":"composer"');
+    expect(html).toContain('"conversation"');
+  });
 });
