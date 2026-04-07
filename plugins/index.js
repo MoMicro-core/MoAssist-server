@@ -21,8 +21,8 @@ const corePlugins = [
 
 module.exports = async (fastify) => {
   await fastify.register(cors, {
-    origin: true,
-    credentials: true,
+    origin: '*',
+    credentials: false,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Authorization', 'Content-Type', 'X-Session-Token'],
     exposedHeaders: ['X-Session-Token'],
