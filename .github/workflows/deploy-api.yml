@@ -33,8 +33,7 @@ jobs:
             [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 
             cd /var/www/MoAssist-server
-            git pull --ff-only origin main
-            npm install --omit=dev
+            git pull
+            npm install
             pm2 restart assistant-api || pm2 start npm --name assistant-api -- start
-            pm2 save
           EOF
