@@ -2,54 +2,35 @@
 
 const { getBaseUrl } = require('../../src/shared/application/url');
 
+const buildFirebaseConfig = () => ({
+  firebase: {
+    apiKey: process.env.FIREBASE_PUBLIC_API_KEY || process.env.FBApi_key || '',
+    authDomain:
+      process.env.FIREBASE_PUBLIC_AUTH_DOMAIN ||
+      `${process.env.FIREBASE_PUBLIC_PROJECT_ID || process.env.FBproject_id || ''}.firebaseapp.com`,
+    projectId:
+      process.env.FIREBASE_PUBLIC_PROJECT_ID ||
+      process.env.FIREBASE_PROJECT_ID ||
+      process.env.FBproject_id ||
+      '',
+    storageBucket: process.env.FIREBASE_PUBLIC_STORAGE_BUCKET || '',
+    messagingSenderId: process.env.FIREBASE_PUBLIC_MESSAGING_SENDER_ID || '',
+    appId: process.env.FIREBASE_PUBLIC_APP_ID || '',
+    measurementId: process.env.FIREBASE_PUBLIC_MEASUREMENT_ID || '',
+  },
+  vapidKey: process.env.FIREBASE_PUBLIC_VAPID_KEY || '',
+});
+
 module.exports = ({ services, fastify }) => [
   {
     method: 'GET',
-    url: '/health',
+    url: '/v1/public/firebase-config',
     access: ['public'],
     schema: {
       tags: ['Public'],
-      summary: 'Service health',
+      summary: 'Firebase public config',
     },
-    handler: async () => ({
-      service: fastify.config.environment.productName,
-      status: 'ok',
-    }),
-  },
-  {
-    method: 'GET',
-    url: '/v1/public/runtime-config.js',
-    access: ['public'],
-    schema: {
-      tags: ['Public'],
-      summary: 'Firebase runtime config',
-    },
-    handler: async (request, reply) => {
-      const baseUrl = getBaseUrl(request, fastify.config.environment.appUrl);
-      const payload = {
-        apiBaseUrl: baseUrl,
-        firebase: {
-          apiKey:
-            process.env.FIREBASE_PUBLIC_API_KEY || process.env.FBApi_key || '',
-          authDomain:
-            process.env.FIREBASE_PUBLIC_AUTH_DOMAIN ||
-            `${process.env.FIREBASE_PUBLIC_PROJECT_ID || process.env.FBproject_id || ''}.firebaseapp.com`,
-          projectId:
-            process.env.FIREBASE_PUBLIC_PROJECT_ID ||
-            process.env.FIREBASE_PROJECT_ID ||
-            process.env.FBproject_id ||
-            '',
-          storageBucket: process.env.FIREBASE_PUBLIC_STORAGE_BUCKET || '',
-          messagingSenderId:
-            process.env.FIREBASE_PUBLIC_MESSAGING_SENDER_ID || '',
-          appId: process.env.FIREBASE_PUBLIC_APP_ID || '',
-          measurementId: process.env.FIREBASE_PUBLIC_MEASUREMENT_ID || '',
-        },
-        vapidKey: process.env.FIREBASE_PUBLIC_VAPID_KEY || '',
-      };
-      reply.type('application/javascript');
-      return `window.MOMICRO_ASSIST_RUNTIME=${JSON.stringify(payload).replace(/</g, '\\u003c')};`;
-    },
+    handler: async () => buildFirebaseConfig(),
   },
   {
     method: 'GET',
@@ -74,6 +55,19 @@ module.exports = ({ services, fastify }) => [
         request.query?.lang || '',
       );
     },
+  },
+  {
+    method: 'GET',
+    url: '/health',
+    access: ['public'],
+    schema: {
+      tags: ['Public'],
+      summary: 'Service health',
+    },
+    handler: async () => ({
+      service: fastify.config.environment.productName,
+      status: 'ok',
+    }),
   },
   {
     method: 'POST',

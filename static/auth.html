@@ -4,7 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MoMicro Assist Auth</title>
-    <script src="/v1/public/runtime-config.js"></script>
     <style>
       :root {
         color-scheme: light;
@@ -357,8 +356,12 @@
         isSupported,
       } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-messaging.js';
 
-      const runtime = window.MOMICRO_ASSIST_RUNTIME || {};
-      const firebaseConfig = runtime.firebase || {};
+      const firebaseResponse = await fetch('/v1/public/firebase-config');
+      const firebaseRuntime = await firebaseResponse.json();
+      if (!firebaseResponse.ok) {
+        throw new Error(firebaseRuntime.message || 'Failed to load Firebase config');
+      }
+      const firebaseConfig = firebaseRuntime.firebase || {};
       const app = initializeApp(firebaseConfig);
       const auth = getAuth(app);
       const result = document.getElementById('result');
@@ -383,12 +386,12 @@
       };
 
       const readFcmToken = async () => {
-        if (!runtime.vapidKey) return '';
+        if (!firebaseRuntime.vapidKey) return '';
         if (!(await isSupported())) return '';
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') return '';
         const messaging = getMessaging(app);
-        return getToken(messaging, { vapidKey: runtime.vapidKey }).catch(
+        return getToken(messaging, { vapidKey: firebaseRuntime.vapidKey }).catch(
           () => '',
         );
       };
@@ -396,7 +399,7 @@
       const createBackendSession = async (user) => {
         const idToken = await user.getIdToken(true);
         const fcmToken = await readFcmToken();
-        const response = await fetch(runtime.apiBaseUrl + '/v1/auth/session', {
+        const response = await fetch(window.location.origin + '/v1/auth/session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ idToken, fcmToken }),
