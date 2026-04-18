@@ -83,6 +83,8 @@ export interface ChatbotThemeVariant {
   accentColor: string;
   backgroundColor: string;
   surfaceColor: string;
+  launcherBackgroundColor: string;
+  inputBackgroundColor: string;
   textColor: string;
   accentTextColor: string;
   borderColor: string;
@@ -133,12 +135,14 @@ export interface ChatbotSettings {
   botName: string;
   initialMessage: string;
   inputPlaceholder: string;
+  inputHeight: number;
   auth: boolean;
   inactivityHours: number;
   defaultLanguage: string;
   enabledLanguages: string[];
   widgetLocation: WidgetLocation;
   rounded: boolean;
+  cornerRadius: number;
   domains: string[];
   suggestedMessages: string[];
   leadsFormTitle: string;

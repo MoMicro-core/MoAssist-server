@@ -376,7 +376,8 @@ class ChatbotService {
   requiresCustomBranding(requestedBrand = {}) {
     return Boolean(
       normalizeBrandValue(requestedBrand.logoUrl) ||
-        normalizeBrandValue(requestedBrand.logoBackgroundColor),
+        normalizeBrandValue(requestedBrand.logoBackgroundColor) ||
+        normalizeBrandValue(requestedBrand.bubbleIconUrl),
     );
   }
 
@@ -426,6 +427,7 @@ class ChatbotService {
         ...nextSettings.brand,
         logoUrl: '',
         logoBackgroundColor: '',
+        bubbleIconUrl: '',
       };
     }
 
@@ -482,6 +484,56 @@ class ChatbotService {
       brand: {
         ...currentSettings.brand,
         logoUrl: uploaded.publicUrl,
+      },
+    });
+
+    await document.save();
+    return this.decorateChatbot(document.toObject());
+  }
+
+  async uploadBubbleIcon(actor, chatbotId, file = {}) {
+    const document = await this.getManageableDocument(actor, chatbotId);
+    const tier = this.getTierPolicy(document.toObject());
+    tier.assertCapability(
+      TIER_CAPABILITIES.CUSTOM_BRANDING,
+      'Current tier does not allow custom chatbot branding',
+    );
+
+    const fileName = String(file.fileName || '').trim();
+    const mimeType = normalizeMimeType(file.mimeType);
+    const buffer = file.buffer;
+
+    if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
+      throw new BadRequestError('Bubble icon file is required');
+    }
+
+    if (buffer.length > MAX_LOGO_FILE_SIZE) {
+      throw new BadRequestError('Bubble icon file must be 10 MB or smaller');
+    }
+
+    const extension = resolveImageExtension(fileName, mimeType);
+    if (!extension) {
+      throw new BadRequestError(
+        'Bubble icon file must be PNG, JPG, WEBP, or SVG',
+      );
+    }
+
+    const objectPath = `chatbots/${chatbotId}/branding/bubble-icon-${Date.now()}-${createId()}.${extension}`;
+    const uploaded = await this.brandingStorage.uploadPublicObject({
+      objectPath,
+      buffer,
+      mimeType: mimeType || 'application/octet-stream',
+    });
+
+    const currentSettings = this.applyTierAccess(
+      document.toObject(),
+      document.settings.toObject(),
+    );
+    document.settings = this.applyTierAccess(document.toObject(), {
+      ...currentSettings,
+      brand: {
+        ...currentSettings.brand,
+        bubbleIconUrl: uploaded.publicUrl,
       },
     });
 

@@ -78,6 +78,11 @@ export class ChatbotService {
     mimeType: string;
     buffer: Buffer;
   }): Promise<Chatbot>;
+  uploadBubbleIcon(actor: Actor, chatbotId: string, file: {
+    fileName: string;
+    mimeType: string;
+    buffer: Buffer;
+  }): Promise<Chatbot>;
   getLanguageOptions(): {
     defaultLanguage: string;
     allowedLanguages: string[];

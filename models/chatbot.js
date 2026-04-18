@@ -28,6 +28,12 @@ module.exports = {
         type: String,
         default: 'Write a message...',
       },
+      inputHeight: {
+        type: Number,
+        default: 42,
+        min: 36,
+        max: 72,
+      },
       auth: { type: Boolean, default: false },
       inactivityHours: {
         type: Number,
@@ -49,6 +55,12 @@ module.exports = {
         enum: ['left', 'right', 'top-left', 'top-right'],
       },
       rounded: { type: Boolean, default: true },
+      cornerRadius: {
+        type: Number,
+        default: 24,
+        min: 0,
+        max: 40,
+      },
       domains: { type: [String], default: ['*'] },
       suggestedMessages: { type: [String], default: [] },
       leadsFormTitle: {
@@ -89,6 +101,8 @@ module.exports = {
           accentColor: { type: String, default: '#099ad9' },
           backgroundColor: { type: String, default: '#fcfff8' },
           surfaceColor: { type: String, default: '#ffffff' },
+          launcherBackgroundColor: { type: String, default: '#099ad9' },
+          inputBackgroundColor: { type: String, default: '#ffffff' },
           textColor: { type: String, default: '#173a55' },
           accentTextColor: { type: String, default: '#fcfff8' },
           borderColor: { type: String, default: '#beebf0' },
@@ -97,6 +111,8 @@ module.exports = {
           accentColor: { type: String, default: '#5cd7d3' },
           backgroundColor: { type: String, default: '#0b1c2a' },
           surfaceColor: { type: String, default: '#102536' },
+          launcherBackgroundColor: { type: String, default: '#5cd7d3' },
+          inputBackgroundColor: { type: String, default: '#102536' },
           textColor: { type: String, default: '#ecfdff' },
           accentTextColor: { type: String, default: '#0b1c2a' },
           borderColor: { type: String, default: '#214d6f' },

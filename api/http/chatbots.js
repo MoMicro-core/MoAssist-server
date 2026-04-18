@@ -19,14 +19,17 @@ const collectMultipartFiles = async (request) => {
   return files;
 };
 
-const collectSingleMultipartFile = async (request) => {
+const collectSingleMultipartFile = async (
+  request,
+  { entityLabel = 'file' } = {},
+) => {
   let selected = null;
   const parts = request.parts();
 
   for await (const part of parts) {
     if (part.type !== 'file') continue;
     if (selected) {
-      throw new BadRequestError('Only one logo file can be uploaded');
+      throw new BadRequestError(`Only one ${entityLabel} file can be uploaded`);
     }
     selected = {
       fileName: part.filename,
@@ -36,7 +39,7 @@ const collectSingleMultipartFile = async (request) => {
   }
 
   if (!selected) {
-    throw new BadRequestError('Logo file is required');
+    throw new BadRequestError(`${entityLabel} file is required`);
   }
 
   return selected;
@@ -285,8 +288,30 @@ module.exports = ({ services, fastify }) => [
       consumes: ['multipart/form-data'],
     },
     handler: async (request) => {
-      const file = await collectSingleMultipartFile(request);
+      const file = await collectSingleMultipartFile(request, {
+        entityLabel: 'logo',
+      });
       return services.chatbotService.uploadLogo(
+        request.appSession,
+        request.params.chatbotId,
+        file,
+      );
+    },
+  },
+  {
+    method: 'POST',
+    url: '/v1/chatbots/:chatbotId/bubble-icon',
+    access: ['user', 'admin'],
+    schema: {
+      tags: ['Chatbots'],
+      summary: 'Upload a chatbot launcher icon image',
+      consumes: ['multipart/form-data'],
+    },
+    handler: async (request) => {
+      const file = await collectSingleMultipartFile(request, {
+        entityLabel: 'bubble icon',
+      });
+      return services.chatbotService.uploadBubbleIcon(
         request.appSession,
         request.params.chatbotId,
         file,

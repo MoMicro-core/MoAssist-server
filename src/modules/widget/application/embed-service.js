@@ -42,12 +42,17 @@ const withAlpha = (
   return fallback;
 };
 
-const formatLanguageLabel = (value = '') =>
-  String(value || '')
-    .split(/[\s-]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ') || 'English';
+const chatBubbleIcon = (color = '#ffffff') =>
+  `data:image/svg+xml;utf8,${encodeURIComponent(
+    // Tabler "message-circle" adapted for inline data URI usage.
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 20l1.3-3.9c-2.324-3.437-1.426-7.872 2.1-10.374c3.526-2.501 8.59-2.296 11.845 .48c3.255 2.777 3.695 7.266 1.029 10.501c-2.666 3.235-7.615 4.215-11.574 2.293l-4.7 1"/></svg>`,
+  )}`;
+
+const closeIcon = (color = '#111111') =>
+  `data:image/svg+xml;utf8,${encodeURIComponent(
+    // Tabler "x" adapted for inline data URI usage.
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>`,
+  )}`;
 
 const createPreviewConversation = (chatbot) => {
   const firstSuggestion =
@@ -107,30 +112,30 @@ class EmbedService {
     const transformOrigin = `${isTop ? 'top' : 'bottom'} ${isLeft ? 'left' : 'right'}`;
     const closedTranslateY = isTop ? '-18px' : '18px';
     const lightTheme = chatbot.settings.theme.light;
-    const accent = lightTheme.accentColor;
-    const accentText = lightTheme.accentTextColor;
+    const launcherBackground =
+      lightTheme.launcherBackgroundColor || lightTheme.accentColor;
     const surface = lightTheme.surfaceColor;
-    const border = lightTheme.borderColor;
-    const text = lightTheme.textColor;
     const rounded = chatbot.settings.rounded !== false;
-    const launcherRadius = rounded ? '26px' : '18px';
-    const panelRadius = rounded ? '30px' : '20px';
-    const iconRadius = rounded ? '18px' : '12px';
+    const cornerRadius = Number.isFinite(chatbot.settings.cornerRadius)
+      ? Math.max(0, Math.min(40, chatbot.settings.cornerRadius))
+      : 24;
+    const launcherRadius = rounded ? `${Math.max(18, cornerRadius)}px` : '12px';
+    const panelRadius = rounded ? `${Math.max(16, cornerRadius)}px` : '0px';
     const launcherShadow = `0 18px 42px ${withAlpha(
-      accent,
+      launcherBackground,
       0.28,
       'rgba(15, 23, 42, 0.18)',
     )}`;
     const panelShadow = `0 28px 64px ${withAlpha(
-      accent,
+      launcherBackground,
       0.18,
       'rgba(15, 23, 42, 0.22)',
     )}`;
-    const accentSoft = withAlpha(accent, 0.16, 'rgba(15, 23, 42, 0.08)');
     const launcherIconUrl =
       chatbot.settings.brand.bubbleIconUrl || chatbot.settings.brand.logoUrl;
-    const launcherTitle = chatbot.settings.botName;
-    const launcherInitial = chatbot.settings.botName.slice(0, 1).toUpperCase();
+    const launcherIcon =
+      launcherIconUrl ||
+      chatBubbleIcon(lightTheme.accentTextColor || '#ffffff');
 
     return `
 (function () {
@@ -168,66 +173,28 @@ class EmbedService {
   button.setAttribute('aria-label', ${escapeScript(
     `Open ${chatbot.settings.botName}`,
   )});
-  button.style.display = 'grid';
-  button.style.gridTemplateColumns = '52px minmax(0, 1fr)';
-  button.style.alignItems = 'center';
-  button.style.gap = '12px';
-  button.style.width = 'min(320px, calc(100vw - 18px))';
+  button.style.width = '58px';
+  button.style.height = '58px';
   button.style.border = '0';
   button.style.borderRadius = ${escapeScript(launcherRadius)};
-  button.style.padding = '10px 14px 10px 10px';
+  button.style.padding = '0';
   button.style.cursor = 'pointer';
-  button.style.textAlign = 'left';
-  button.style.color = ${escapeScript(text)};
-  button.style.background =
-    'linear-gradient(180deg, ${surface}, ${surface}) padding-box, linear-gradient(135deg, ${accentSoft}, ${border}) border-box';
-  button.style.border = '1px solid transparent';
+  button.style.background = ${escapeScript(launcherBackground)};
   button.style.boxShadow = ${escapeScript(launcherShadow)};
-  button.style.backdropFilter = 'blur(18px)';
-  var icon = document.createElement('span');
-  icon.style.width = '52px';
-  icon.style.height = '52px';
-  icon.style.borderRadius = ${escapeScript(iconRadius)};
-  icon.style.display = 'flex';
-  icon.style.alignItems = 'center';
-  icon.style.justifyContent = 'center';
-  icon.style.overflow = 'hidden';
-  icon.style.flex = 'none';
-  icon.style.background = ${escapeScript(
-    chatbot.settings.brand.logoBackgroundColor || accentSoft,
-  )};
-  icon.style.boxShadow = 'inset 0 0 0 1px ${border}';
+  button.style.display = 'flex';
+  button.style.alignItems = 'center';
+  button.style.justifyContent = 'center';
+  var icon = document.createElement('img');
+  icon.src = ${escapeScript(launcherIcon)};
+  icon.alt = '';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.style.width = '24px';
+  icon.style.height = '24px';
+  icon.style.objectFit = 'contain';
   if (${launcherIconUrl ? 'true' : 'false'}) {
-    var iconImage = document.createElement('img');
-    iconImage.src = ${escapeScript(launcherIconUrl || '')};
-    iconImage.alt = ${escapeScript(`${chatbot.settings.botName} icon`)};
-    iconImage.style.width = '100%';
-    iconImage.style.height = '100%';
-    iconImage.style.objectFit = 'cover';
-    icon.appendChild(iconImage);
-  } else {
-    icon.textContent = ${escapeScript(launcherInitial)};
-    icon.style.fontSize = '18px';
-    icon.style.fontWeight = '800';
-    icon.style.color = ${escapeScript(accentText)};
-    icon.style.background =
-      'linear-gradient(135deg, ${accent}, ${accent})';
+    icon.style.filter = 'brightness(0) invert(1)';
   }
-  var copy = document.createElement('span');
-  copy.style.display = 'grid';
-  copy.style.gap = '0';
-  copy.style.minWidth = '0';
-  var copyTitle = document.createElement('span');
-  copyTitle.textContent = ${escapeScript(launcherTitle)};
-  copyTitle.style.fontSize = '15px';
-  copyTitle.style.fontWeight = '800';
-  copyTitle.style.lineHeight = '1.1';
-  copyTitle.style.whiteSpace = 'nowrap';
-  copyTitle.style.overflow = 'hidden';
-  copyTitle.style.textOverflow = 'ellipsis';
-  copy.appendChild(copyTitle);
   button.appendChild(icon);
-  button.appendChild(copy);
   var panel = document.createElement('div');
   panel.style.width = '420px';
   panel.style.maxWidth = 'calc(100vw - 18px)';
@@ -242,10 +209,9 @@ class EmbedService {
   panel.style.transition =
     'max-height 240ms ease, opacity 180ms ease, transform 240ms ease';
   panel.style.borderRadius = ${escapeScript(panelRadius)};
-  panel.style.border = '1px solid ${border}';
-  panel.style.background = ${escapeScript(surface)};
+  panel.style.border = '0';
+  panel.style.background = 'transparent';
   panel.style.boxShadow = ${escapeScript(panelShadow)};
-  panel.style.backdropFilter = 'blur(18px)';
   var iframe = document.createElement('iframe');
   iframe.src = iframeSrc;
   iframe.title = ${escapeScript(chatbot.settings.botName)};
@@ -314,25 +280,31 @@ class EmbedService {
     const lightTheme = chatbot.settings.theme.light;
     const darkTheme = chatbot.settings.theme.dark;
     const widgetLocation = chatbot.settings.widgetLocation || 'right';
+    const launcherIsTop =
+      widgetLocation === 'top-left' || widgetLocation === 'top-right';
+    const launcherIsLeft =
+      widgetLocation === 'left' || widgetLocation === 'top-left';
+    const launcherVerticalEdge = launcherIsTop ? 'top' : 'bottom';
+    const launcherHorizontalEdge = launcherIsLeft ? 'left' : 'right';
     const previewEnabled = Boolean(preview?.enabled);
     const previewMode = preview?.mode === 'dark' ? 'dark' : 'light';
     const rounded = chatbot.settings.rounded !== false;
-    const radiusXl = rounded ? '30px' : '20px';
-    const radiusLg = rounded ? '24px' : '16px';
-    const radiusMd = rounded ? '18px' : '12px';
-    const radiusSm = rounded ? '14px' : '10px';
+    const cornerRadius = Number.isFinite(chatbot.settings.cornerRadius)
+      ? Math.max(0, Math.min(40, chatbot.settings.cornerRadius))
+      : 24;
+    const baseRadius = rounded ? cornerRadius : 0;
+    const radiusXl = `${baseRadius}px`;
+    const radiusLg = `${Math.max(0, baseRadius - 6)}px`;
+    const radiusMd = `${Math.max(0, baseRadius - 12)}px`;
+    const radiusSm = `${Math.max(0, baseRadius - 14)}px`;
     const launcherIconUrl =
       chatbot.settings.brand.bubbleIconUrl || chatbot.settings.brand.logoUrl;
     const brandIconUrl =
       chatbot.settings.brand.logoUrl || chatbot.settings.brand.bubbleIconUrl;
-    const activityLabel = `${chatbot.settings.inactivityHours}h inactivity window`;
-    const languageLabel = formatLanguageLabel(chatbot.settings.defaultLanguage);
-    const responseModeLabel = chatbot.settings.ai.enabled
-      ? 'AI replies'
-      : 'Human follow-up';
-    const sessionModeLabel = chatbot.settings.auth
-      ? 'Secure session'
-      : 'Guest chat';
+    const launcherIcon =
+      launcherIconUrl ||
+      chatBubbleIcon(lightTheme.accentTextColor || '#ffffff');
+    const closeSvg = closeIcon(lightTheme.textColor || '#111111');
     const payload = {
       chatbot,
       apiBaseUrl: baseUrl,
@@ -374,6 +346,7 @@ class EmbedService {
         0.24,
         'rgba(9, 154, 217, 0.24)',
       )};
+      --launcher-bg: ${lightTheme.launcherBackgroundColor || lightTheme.accentColor};
       --bg: ${lightTheme.backgroundColor};
       --surface: ${lightTheme.surfaceColor};
       --surface-soft: ${withAlpha(
@@ -394,6 +367,7 @@ class EmbedService {
         lightTheme.borderColor,
       )};
       --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || lightTheme.surfaceColor};
+      --input-bg: ${lightTheme.inputBackgroundColor || lightTheme.surfaceColor};
       --radius-xl: ${radiusXl};
       --radius-lg: ${radiusLg};
       --radius-md: ${radiusMd};
@@ -422,7 +396,7 @@ class EmbedService {
       height: 100vh;
       display: grid;
       grid-template-rows: auto 1fr auto;
-      background: linear-gradient(180deg, var(--surface-soft), var(--surface));
+      background: var(--surface);
     }
     body.preview {
       display: flex;
@@ -469,6 +443,8 @@ class EmbedService {
         lightTheme.borderColor,
       )};
       --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || lightTheme.surfaceColor};
+      --launcher-bg: ${lightTheme.launcherBackgroundColor || lightTheme.accentColor};
+      --input-bg: ${lightTheme.inputBackgroundColor || lightTheme.surfaceColor};
       --shadow: 0 28px 64px ${withAlpha(
         lightTheme.accentColor,
         0.18,
@@ -513,6 +489,8 @@ class EmbedService {
         darkTheme.borderColor,
       )};
       --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || darkTheme.surfaceColor};
+      --launcher-bg: ${darkTheme.launcherBackgroundColor || darkTheme.accentColor};
+      --input-bg: ${darkTheme.inputBackgroundColor || darkTheme.surfaceColor};
       --shadow: 0 28px 64px ${withAlpha(
         darkTheme.accentColor,
         0.18,
@@ -534,24 +512,20 @@ class EmbedService {
     }
     .standalone-launcher {
       position: fixed;
-      right: 18px;
-      bottom: 18px;
+      ${launcherHorizontalEdge}: 18px;
+      ${launcherVerticalEdge}: 18px;
       z-index: 10;
-      display: inline-grid;
-      grid-template-columns: 46px minmax(0, 1fr);
+      display: inline-flex;
       align-items: center;
-      gap: 12px;
-      width: min(300px, calc(100vw - 24px));
-      border: 1px solid transparent;
-      border-radius: var(--radius-lg);
-      padding: 10px 14px 10px 10px;
-      background:
-        linear-gradient(180deg, var(--surface), var(--surface)) padding-box,
-        linear-gradient(135deg, var(--accent-soft), var(--border-soft)) border-box;
+      justify-content: center;
+      width: 58px;
+      height: 58px;
+      border: 0;
+      border-radius: 999px;
+      padding: 0;
+      background: var(--launcher-bg);
       box-shadow: var(--shadow);
-      color: var(--text);
       cursor: pointer;
-      text-align: left;
     }
     body.preview .standalone-launcher {
       position: absolute;
@@ -610,71 +584,36 @@ class EmbedService {
       height: 100%;
       object-fit: cover;
     }
-    .standalone-copy {
-      display: grid;
-      gap: 4px;
-      min-width: 0;
-    }
-    .standalone-title {
-      font-size: 15px;
-      font-weight: 800;
-      line-height: 1.1;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .standalone-subtitle {
-      font-size: 12px;
-      color: var(--text-soft);
-      line-height: 1.2;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+    .standalone-icon {
+      width: 24px;
+      height: 24px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
     }
     .header {
-      padding: 18px 18px 14px;
+      padding: 16px 16px 12px;
       border-bottom: 1px solid var(--border);
-      background:
-        linear-gradient(135deg, var(--accent-soft), transparent 64%),
-        linear-gradient(180deg, var(--surface), transparent);
+      background: var(--surface);
     }
     .header-row {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      gap: 10px;
     }
     .brand-lockup {
       display: flex;
-      align-items: flex-start;
-      gap: 12px;
+      align-items: center;
+      gap: 10px;
       min-width: 0;
     }
     .brand-copy {
       min-width: 0;
     }
-    .eyebrow {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      border-radius: 999px;
-      padding: 7px 10px;
-      background: var(--accent-soft);
-      color: var(--accent);
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      max-width: 100%;
-    }
-    .eyebrow span {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
     .title {
       margin: 0;
-      font-size: 18px;
+      font-size: 16px;
       font-weight: 800;
       letter-spacing: -0.02em;
       line-height: 1.05;
@@ -692,89 +631,31 @@ class EmbedService {
       color: var(--text-soft);
       font-style: normal;
     }
-    .subtitle {
-      margin: 6px 0 0;
-      font-size: 13px;
-      line-height: 1.5;
-      color: var(--text-soft);
-    }
-    .meta {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-    .status-badge {
-      display: inline-flex;
-      align-items: center;
+    .icon-button {
+      width: 28px;
+      height: 28px;
+      border: 0;
       border-radius: 999px;
-      border: 1px solid var(--border-soft);
-      padding: 5px 10px;
-      font-size: 11px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      background: rgba(255, 255, 255, 0.42);
-    }
-    .status-badge.active {
-      color: var(--accent);
-      background: var(--accent-soft);
-      border-color: transparent;
-    }
-    .status-badge.pending {
-      color: #9a6700;
-      background: rgba(245, 158, 11, 0.14);
-      border-color: rgba(245, 158, 11, 0.22);
-    }
-    .status-badge.closed {
-      color: #b42318;
-      background: rgba(180, 35, 24, 0.1);
-      border-color: rgba(180, 35, 24, 0.2);
-    }
-    .header-tray {
-      margin-top: 14px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-    .info-chip {
-      display: inline-flex;
-      align-items: center;
-      border-radius: 999px;
-      padding: 7px 10px;
-      border: 1px solid var(--border-soft);
-      background: rgba(255, 255, 255, 0.5);
-      color: var(--text-soft);
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.03em;
-    }
-    .icon-button,
-    .end-chat {
-      border: 1px solid var(--border-soft);
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.52);
+      background: transparent;
       color: inherit;
-      padding: 7px 11px;
-      font-size: 12px;
-      font-weight: 700;
+      padding: 0;
+      font-size: 16px;
+      line-height: 1;
       cursor: pointer;
     }
-    .end-chat {
-      color: #b42318;
-      background: rgba(180, 35, 24, 0.08);
-      border-color: rgba(180, 35, 24, 0.16);
+    .icon-button img {
+      width: 16px;
+      height: 16px;
+      display: block;
+      margin: auto;
     }
     .messages {
-      padding: 18px 16px 16px;
+      padding: 16px;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
       gap: 12px;
-      background:
-        radial-gradient(circle at top right, var(--accent-fog), transparent 24%),
-        transparent;
+      background: var(--surface);
     }
     .message {
       max-width: 85%;
@@ -819,38 +700,48 @@ class EmbedService {
       border: 1px solid var(--border-soft);
       border-bottom-left-radius: calc(var(--radius-sm) - 4px);
     }
+    .message.action {
+      max-width: 100%;
+      align-self: stretch;
+      padding: 0;
+      background: transparent;
+      border: 0;
+      box-shadow: none;
+    }
+    .human-request-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 14px;
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-md);
+      background: rgba(255, 255, 255, 0.72);
+    }
+    .human-request-copy {
+      color: var(--text-soft);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .human-request-button {
+      border: 0;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      padding: 8px 12px;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+      cursor: pointer;
+    }
     .composer {
       padding: 14px;
       border-top: 1px solid var(--border);
-      background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0)),
-        var(--surface);
+      background: var(--surface);
     }
     .composer.locked {
       opacity: 0.7;
-    }
-    .suggestions {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-bottom: 12px;
-    }
-    .suggestions[hidden] {
-      display: none;
-    }
-    .chip {
-      border: 1px solid var(--border-soft);
-      background: rgba(255, 255, 255, 0.78);
-      color: var(--text);
-      border-radius: 999px;
-      padding: 7px 11px;
-      cursor: pointer;
-      font-size: 12px;
-      transition: transform 120ms ease, border-color 120ms ease;
-    }
-    .chip:hover {
-      transform: translateY(-1px);
-      border-color: var(--accent);
     }
     .row {
       display: grid;
@@ -859,16 +750,25 @@ class EmbedService {
     }
     textarea {
       width: 100%;
-      min-height: 44px;
-      max-height: 140px;
+      height: var(--input-height, 42px);
+      min-height: var(--input-height, 42px);
+      max-height: var(--input-height, 42px);
       resize: none;
       border: 1px solid var(--border-soft);
       border-radius: var(--radius-sm);
-      padding: 12px 14px;
-      background: rgba(255, 255, 255, 0.86);
+      padding: 10px 14px;
+      background: var(--input-bg);
       color: inherit;
       font: inherit;
-      box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.03);
+      box-shadow: none;
+      outline: none;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+    textarea:focus {
+      outline: none;
+      border-color: var(--border-soft);
+      box-shadow: none;
     }
     textarea:disabled,
     button:disabled {
@@ -886,15 +786,11 @@ class EmbedService {
       box-shadow: 0 18px 32px var(--accent-glow);
     }
     .composer-meta {
-      margin-top: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      flex-wrap: wrap;
+      margin-top: 10px;
+      text-align: center;
       color: var(--text-soft);
-      font-size: 12px;
-      line-height: 1.5;
+      font-size: 11px;
+      line-height: 1.4;
     }
     .overlay {
       position: fixed;
@@ -964,17 +860,10 @@ class EmbedService {
       cursor: pointer;
     }
     @media (max-width: 520px) {
-      .header-row {
-        flex-direction: column;
-      }
-      .meta {
-        width: 100%;
-        justify-content: flex-start;
-      }
       .message {
         max-width: 92%;
       }
-      .composer-meta {
+      .human-request-card {
         flex-direction: column;
         align-items: flex-start;
       }
@@ -998,6 +887,7 @@ class EmbedService {
           0.28,
           'rgba(92, 215, 211, 0.28)',
         )};
+        --launcher-bg: ${darkTheme.launcherBackgroundColor || darkTheme.accentColor};
         --bg: ${darkTheme.backgroundColor};
         --surface: ${darkTheme.surfaceColor};
         --surface-soft: ${withAlpha(
@@ -1018,6 +908,7 @@ class EmbedService {
           darkTheme.borderColor,
         )};
         --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || darkTheme.surfaceColor};
+        --input-bg: ${darkTheme.inputBackgroundColor || darkTheme.surfaceColor};
         --shadow: 0 28px 64px ${withAlpha(
           darkTheme.accentColor,
           0.18,
@@ -1042,16 +933,9 @@ class EmbedService {
 </head>
 <body${previewEnabled ? ` class="preview preview-${previewMode}"` : ''}>
   ${previewEnabled ? `<div class="preview-stage ${widgetLocation}">` : ''}
-  <button id="standaloneLauncher" class="standalone-launcher" type="button" hidden data-preview-part="launcher">
+  <button id="standaloneLauncher" class="standalone-launcher" type="button" hidden data-preview-part="launcher" aria-label="${chatbot.settings.botName}">
     <span class="standalone-icon">
-      ${
-        launcherIconUrl
-          ? `<img src="${launcherIconUrl}" alt="${chatbot.settings.botName} icon" />`
-          : chatbot.settings.botName.slice(0, 1).toUpperCase()
-      }
-    </span>
-    <span class="standalone-copy">
-      <span class="standalone-title">${chatbot.settings.botName}</span>
+      <img src="${launcherIcon}" alt="" aria-hidden="true" />
     </span>
   </button>
   <div id="shell" class="shell">
@@ -1069,32 +953,17 @@ class EmbedService {
             <h1 id="previewBotName" class="title"${previewEnabled ? ' data-preview-editable="true" data-preview-field="botName" contenteditable="plaintext-only"' : ''}>${chatbot.settings.botName}</h1>
           </div>
         </div>
-        <div class="meta">
-          <span id="statusBadge" class="status-badge active">Active</span>
-          <button id="hideChat" class="icon-button" type="button">Hide</button>
-          <button id="endChat" class="end-chat" type="button">End Chat</button>
-        </div>
-      </div>
-      <div class="header-tray">
-        <span class="info-chip">${responseModeLabel}</span>
-        <span class="info-chip">${sessionModeLabel}</span>
-        <span class="info-chip">${languageLabel}</span>
+        <button id="hideChat" class="icon-button" type="button" aria-label="Hide chat"><img src="${closeSvg}" alt="" aria-hidden="true" /></button>
       </div>
     </header>
     <main id="messages" class="messages" data-preview-part="canvas"></main>
     <footer id="composer" class="composer" data-preview-part="composer">
-      <div id="suggestions" class="suggestions" data-preview-part="suggested"></div>
       <div class="row">
-        <textarea id="input" placeholder="${chatbot.settings.inputPlaceholder}"></textarea>
+        <textarea id="input" rows="1" placeholder="${chatbot.settings.inputPlaceholder}"></textarea>
         <button id="send" class="send" type="button">Send</button>
       </div>
       <div class="composer-meta">
-        <span>${
-          chatbot.settings.auth
-            ? 'This chat is linked to your website session when authClient is provided.'
-            : 'This chat works without website login.'
-        }</span>
-        <span>${activityLabel}</span>
+        <span>Powered by MoMicro</span>
       </div>
     </footer>
   </div>
@@ -1122,30 +991,37 @@ class EmbedService {
       const messages = document.getElementById('messages');
       const input = document.getElementById('input');
       const send = document.getElementById('send');
-      const suggestions = document.getElementById('suggestions');
       const overlay = document.getElementById('overlay');
       const leadForm = document.getElementById('leadForm');
       const submitLead = document.getElementById('submitLead');
       const cancelLead = document.getElementById('cancelLead');
       const hideChat = document.getElementById('hideChat');
       const standaloneLauncher = document.getElementById('standaloneLauncher');
-      const endChat = document.getElementById('endChat');
-      const statusBadge = document.getElementById('statusBadge');
       const composer = document.getElementById('composer');
       const defaultPlaceholder =
         runtime.chatbot.settings.inputPlaceholder || 'Write a message...';
+      const requestedInputHeight = Number.parseInt(
+        new URLSearchParams(window.location.search).get('inputHeight') || '',
+        10,
+      );
+      const configuredInputHeight = Number.parseInt(
+        runtime.chatbot.settings.inputHeight || '',
+        10,
+      );
+      const inputHeight = Number.isInteger(requestedInputHeight)
+        ? requestedInputHeight
+        : configuredInputHeight;
       let socket = null;
       let widgetToken = localStorage.getItem(storageKey) || '';
       let queuedMessage = '';
       let currentConversation = null;
       const messageNodes = new Map();
       const streamStates = new Map();
+      let humanPromptDismissed = false;
 
-      const statusLabels = {
-        active: 'Active',
-        pending: 'Pending',
-        closed: 'Closed',
-      };
+      if (Number.isInteger(inputHeight) && inputHeight >= 36 && inputHeight <= 72) {
+        document.documentElement.style.setProperty('--input-height', inputHeight + 'px');
+      }
 
       const isEmbedded = () => window.parent && window.parent !== window;
 
@@ -1320,6 +1196,56 @@ class EmbedService {
         const items = ensureConversationMessages();
         const index = items.findIndex((item) => item.id === messageId);
         if (index !== -1) items.splice(index, 1);
+      };
+
+      const hasVisitorMessage = (conversation = currentConversation) =>
+        Boolean(
+          (conversation?.messages || []).some(
+            (message) => message.authorType === 'visitor',
+          ),
+        );
+
+      const shouldShowHumanPrompt = () =>
+        !previewEnabled &&
+        runtime.chatbot.settings.ai?.enabled === true &&
+        !humanPromptDismissed &&
+        !hasVisitorMessage();
+
+      const renderHumanPrompt = () => {
+        const existing = document.getElementById('humanRequestPrompt');
+        if (!shouldShowHumanPrompt()) {
+          existing?.remove();
+          return;
+        }
+        if (existing) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.id = 'humanRequestPrompt';
+        wrapper.className = 'message action';
+
+        const card = document.createElement('div');
+        card.className = 'human-request-card';
+
+        const copy = document.createElement('div');
+        copy.className = 'human-request-copy';
+        copy.textContent = 'Prefer a real person? I can forward this conversation to a human teammate.';
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'human-request-button';
+        button.textContent = 'Request the human';
+        button.addEventListener('click', () => {
+          humanPromptDismissed = true;
+          input.value = 'I would like to speak with a human.';
+          renderHumanPrompt();
+          dispatchMessage();
+        });
+
+        card.appendChild(copy);
+        card.appendChild(button);
+        wrapper.appendChild(card);
+        messages.appendChild(wrapper);
+        scrollMessagesToBottom();
       };
 
       const createMessageNode = (message, options = {}) => {
@@ -1502,6 +1428,7 @@ class EmbedService {
         if (!conversation.messages || !conversation.messages.length) {
           addMessage('system', runtime.chatbot.settings.initialMessage);
         }
+        renderHumanPrompt();
         applyConversationState(conversation);
       };
 
@@ -1510,23 +1437,11 @@ class EmbedService {
         send.disabled = disabled;
         input.placeholder = placeholder || defaultPlaceholder;
         composer.classList.toggle('locked', disabled);
-        suggestions
-          .querySelectorAll('button')
-          .forEach((button) => {
-            button.disabled = disabled;
-          });
       };
 
       const applyConversationState = (conversation) => {
         currentConversation = conversation;
         const status = conversation?.status || 'active';
-        statusBadge.textContent = statusLabels[status] || 'Active';
-        statusBadge.className = 'status-badge ' + status;
-        const hideEndChat =
-          runtime.chatbot.settings.auth ||
-          !conversation ||
-          conversation.status === 'closed';
-        endChat.hidden = hideEndChat;
 
         if (status === 'closed') {
           applyComposerState(true, 'This chat is closed');
@@ -1545,38 +1460,6 @@ class EmbedService {
           action: 'widget.read',
           payload: {}
         }));
-      };
-
-      const renderSuggestions = () => {
-        suggestions.innerHTML = '';
-        const items = Array.isArray(runtime.chatbot.settings.suggestedMessages)
-          ? runtime.chatbot.settings.suggestedMessages.filter(Boolean)
-          : [];
-        suggestions.hidden = items.length === 0;
-        items.forEach((item, index) => {
-          if (previewEnabled) {
-            const chip = document.createElement('div');
-            chip.className = 'chip';
-            chip.textContent = item;
-            chip.setAttribute('contenteditable', 'plaintext-only');
-            chip.setAttribute('data-preview-field', 'suggestedMessages');
-            bindPreviewEditable(chip, {
-              field: 'suggestedMessages',
-              index,
-            });
-            suggestions.appendChild(chip);
-          } else {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'chip';
-            button.textContent = item;
-            button.addEventListener('click', () => {
-              input.value = item;
-              dispatchMessage();
-            });
-            suggestions.appendChild(button);
-          }
-        });
       };
 
       const renderLeadForm = () => {
@@ -1598,7 +1481,6 @@ class EmbedService {
 
       if (previewEnabled) {
         renderLeadForm();
-        renderSuggestions();
         renderConversation(preview.conversation || {
           status: 'active',
           messages: [],
@@ -1673,16 +1555,20 @@ class EmbedService {
             return;
           }
 
-          if (packet.event === 'message.created') {
-            const message = packet.payload.message;
-            if (currentConversation) {
-              upsertConversationMessage(message);
-            }
-            syncMessageNode(message);
-            completeStreamingMessage(message.id);
-            if (message.authorType !== 'visitor') queueVisitorRead();
-            return;
+        if (packet.event === 'message.created') {
+          const message = packet.payload.message;
+          if (currentConversation) {
+            upsertConversationMessage(message);
           }
+          syncMessageNode(message);
+          if (message.authorType === 'visitor') {
+            humanPromptDismissed = true;
+            renderHumanPrompt();
+          }
+          completeStreamingMessage(message.id);
+          if (message.authorType !== 'visitor') queueVisitorRead();
+          return;
+        }
 
           if (packet.event === 'message.stream.started') {
             if (currentConversation) {
@@ -1823,19 +1709,10 @@ class EmbedService {
       };
 
       renderLeadForm();
-      renderSuggestions();
       hideChat.addEventListener('click', requestHideWidget);
       standaloneLauncher.addEventListener('click', () => {
         setWidgetHidden(false);
         syncParentVisibility('open');
-      });
-      endChat.addEventListener('click', () => {
-        if (!socket || socket.readyState !== WebSocket.OPEN) return;
-        if (!currentConversation || currentConversation.status === 'closed') return;
-        socket.send(JSON.stringify({
-          action: 'widget.close',
-          payload: {}
-        }));
       });
       send.addEventListener('click', dispatchMessage);
       input.addEventListener('keydown', (event) => {

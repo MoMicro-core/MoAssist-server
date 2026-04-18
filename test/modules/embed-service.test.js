@@ -11,11 +11,13 @@ const createChatbot = (overrides = {}) => ({
     botName: 'Acme Copilot',
     initialMessage: 'Ask anything about plans, onboarding, or support.',
     inputPlaceholder: 'Write your question...',
+    inputHeight: 48,
     auth: true,
     inactivityHours: 6,
     defaultLanguage: 'german',
     widgetLocation: 'left',
-    rounded: false,
+    rounded: true,
+    cornerRadius: 20,
     suggestedMessages: ['Show me pricing', 'Talk to support'],
     leadsFormTitle: 'Share your contact details',
     leadsForm: [
@@ -33,6 +35,8 @@ const createChatbot = (overrides = {}) => ({
         accentTextColor: '#ffffff',
         backgroundColor: '#f4fff8',
         surfaceColor: '#ffffff',
+        launcherBackgroundColor: '#166534',
+        inputBackgroundColor: '#f7fff9',
         textColor: '#163025',
         borderColor: '#b8e0c8',
       },
@@ -41,6 +45,8 @@ const createChatbot = (overrides = {}) => ({
         accentTextColor: '#0c1f16',
         backgroundColor: '#08120d',
         surfaceColor: '#102018',
+        launcherBackgroundColor: '#4ade80',
+        inputBackgroundColor: '#163124',
         textColor: '#effff5',
         borderColor: '#24523a',
       },
@@ -79,17 +85,19 @@ describe('embed service', () => {
     });
 
     expect(html).toContain(
-      '<button id="hideChat" class="icon-button" type="button">Hide</button>',
+      '<button id="hideChat" class="icon-button" type="button" aria-label="Hide chat"><img src="',
     );
-    expect(html).toContain('End Chat');
     expect(html).toContain('Sales Concierge');
     expect(html).toContain('Acme Copilot');
-    expect(html).toContain('AI replies');
-    expect(html).toContain('Secure session');
-    expect(html).toContain('German');
-    expect(html).toContain('6h inactivity window');
+    expect(html).toContain('Request the human');
+    expect(html).toContain('Powered by MoMicro');
+    expect(html).not.toContain('Active');
+    expect(html).not.toContain('End Chat');
     expect(html).toContain('https://cdn.example.com/bubble.png');
     expect(html).toContain('--radius-xl: 20px;');
+    expect(html).toContain('--launcher-bg: #166534;');
+    expect(html).toContain('--input-bg: #f7fff9;');
+    expect(html).toContain('height: var(--input-height, 42px);');
   });
 
   test('iframe preview renders the live widget in preview mode without relying on the normal boot flow', () => {
