@@ -18,11 +18,13 @@ class KnowledgeService {
     chatbotRepository,
     knowledgeFileRepository,
     vectorStore,
+    fileStorage,
     tierCatalog,
   }) {
     this.chatbotRepository = chatbotRepository;
     this.knowledgeFileRepository = knowledgeFileRepository;
     this.vectorStore = vectorStore;
+    this.fileStorage = fileStorage;
     this.tierCatalog = tierCatalog;
   }
 
@@ -80,6 +82,15 @@ class KnowledgeService {
         embeddings,
         mimeType: file.mimeType,
       });
+
+      if (this.fileStorage?.isConfigured?.()) {
+        const objectPath = `chatbots/${chatbotId}/files/${fileId}-${file.fileName}`;
+        await this.fileStorage.uploadPublicObject({
+          objectPath,
+          buffer: file.buffer,
+          mimeType: file.mimeType,
+        });
+      }
 
       const saved = await this.knowledgeFileRepository.create({
         id: fileId,

@@ -139,6 +139,7 @@ const createServices = async (fastify) => {
       baseDirectory: path.join(process.cwd(), 'files'),
       binaryPath: path.join(process.cwd(), 'files', '.bin', 'vector-search'),
     }),
+    fileStorage: fastify.supabaseStorage,
     tierCatalog,
   });
 

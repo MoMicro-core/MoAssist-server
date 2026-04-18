@@ -131,10 +131,7 @@ class EmbedService {
       0.18,
       'rgba(15, 23, 42, 0.22)',
     )}`;
-    const launcherIconUrl =
-      chatbot.settings.brand.bubbleIconUrl || chatbot.settings.brand.logoUrl;
     const launcherIcon =
-      launcherIconUrl ||
       chatBubbleIcon(lightTheme.accentTextColor || '#ffffff');
 
     return `
@@ -191,9 +188,6 @@ class EmbedService {
   icon.style.width = '24px';
   icon.style.height = '24px';
   icon.style.objectFit = 'contain';
-  if (${launcherIconUrl ? 'true' : 'false'}) {
-    icon.style.filter = 'brightness(0) invert(1)';
-  }
   button.appendChild(icon);
   var panel = document.createElement('div');
   panel.style.width = '420px';
@@ -297,14 +291,11 @@ class EmbedService {
     const radiusLg = `${Math.max(0, baseRadius - 6)}px`;
     const radiusMd = `${Math.max(0, baseRadius - 12)}px`;
     const radiusSm = `${Math.max(0, baseRadius - 14)}px`;
-    const launcherIconUrl =
-      chatbot.settings.brand.bubbleIconUrl || chatbot.settings.brand.logoUrl;
     const brandIconUrl =
       chatbot.settings.brand.logoUrl || chatbot.settings.brand.bubbleIconUrl;
     const launcherIcon =
-      launcherIconUrl ||
       chatBubbleIcon(lightTheme.accentTextColor || '#ffffff');
-    const closeSvg = closeIcon(lightTheme.textColor || '#111111');
+    const closeSvg = closeIcon(lightTheme.accentTextColor || '#111111');
     const payload = {
       chatbot,
       apiBaseUrl: baseUrl,
@@ -784,6 +775,13 @@ class EmbedService {
       font-weight: 800;
       cursor: pointer;
       box-shadow: 0 18px 32px var(--accent-glow);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    button.send svg {
+      width: 20px;
+      height: 20px;
     }
     .composer-meta {
       margin-top: 10px;
@@ -960,7 +958,7 @@ class EmbedService {
     <footer id="composer" class="composer" data-preview-part="composer">
       <div class="row">
         <textarea id="input" rows="1" placeholder="${chatbot.settings.inputPlaceholder}"></textarea>
-        <button id="send" class="send" type="button">Send</button>
+        <button id="send" class="send" type="button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M14.76 12H6.832m0 0c0-.275-.057-.55-.17-.808L4.285 5.814c-.76-1.72 1.058-3.442 2.734-2.591L20.8 10.217c1.46.74 1.46 2.826 0 3.566L7.02 20.777c-1.677.851-3.495-.872-2.735-2.591l2.375-5.378A2 2 0 0 0 6.83 12"/></svg></button>
       </div>
       <div class="composer-meta">
         <span>Powered by MoMicro</span>
