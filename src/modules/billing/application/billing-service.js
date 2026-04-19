@@ -313,10 +313,13 @@ class BillingService {
     }
 
     const baseUrl = this.config.environment.appUrl || 'http://localhost:8080';
+    const encodedChatbotId = encodeURIComponent(chatbot.id);
     const successUrl =
-      payload.successUrl || `${baseUrl}/static/auth.html?billing=success`;
+      payload.successUrl ||
+      `${baseUrl}/billing/success?chatbotId=${encodedChatbotId}`;
     const cancelUrl =
-      payload.cancelUrl || `${baseUrl}/static/auth.html?billing=cancel`;
+      payload.cancelUrl ||
+      `${baseUrl}/billing/failure?chatbotId=${encodedChatbotId}`;
 
     return {
       customerId: owner.stripeCustomerId,

@@ -70,6 +70,8 @@ describe('billing tiers', () => {
       expect.objectContaining({
         priceId: 'price_auth_20',
         tierId: 'auth',
+        successUrl: 'http://localhost:8080/billing/success?chatbotId=cb-1',
+        cancelUrl: 'http://localhost:8080/billing/failure?chatbotId=cb-1',
       }),
     );
   });
