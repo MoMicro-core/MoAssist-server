@@ -312,7 +312,7 @@ class BillingService {
       );
     }
 
-    const baseUrl = this.config.environment.appUrl || 'http://localhost:8080';
+    const baseUrl = 'https://momicro.com';
     const encodedChatbotId = encodeURIComponent(chatbot.id);
     const successUrl =
       payload.successUrl ||
