@@ -376,8 +376,8 @@ class ChatbotService {
   requiresCustomBranding(requestedBrand = {}) {
     return Boolean(
       normalizeBrandValue(requestedBrand.logoUrl) ||
-        normalizeBrandValue(requestedBrand.logoBackgroundColor) ||
-        normalizeBrandValue(requestedBrand.bubbleIconUrl),
+      normalizeBrandValue(requestedBrand.logoBackgroundColor) ||
+      normalizeBrandValue(requestedBrand.bubbleIconUrl),
     );
   }
 
@@ -628,9 +628,9 @@ class ChatbotService {
 
     const ordered = selected.includes(normalizedDefault)
       ? [
-          normalizedDefault,
-          ...selected.filter((language) => language !== normalizedDefault),
-        ]
+        normalizedDefault,
+        ...selected.filter((language) => language !== normalizedDefault),
+      ]
       : [normalizedDefault, ...selected];
 
     return ordered.length ? ordered : [normalizedDefault];

@@ -206,6 +206,7 @@ class EmbedService {
   panel.style.border = '0';
   panel.style.background = 'transparent';
   panel.style.boxShadow = ${escapeScript(panelShadow)};
+  panel.style.zIndex = '99999';
   var iframe = document.createElement('iframe');
   iframe.src = iframeSrc;
   iframe.title = ${escapeScript(chatbot.settings.botName)};
@@ -217,6 +218,7 @@ class EmbedService {
   iframe.style.border = '0';
   iframe.style.borderRadius = ${escapeScript(panelRadius)};
   iframe.style.background = ${escapeScript(surface)};
+  iframe.style.zIndex = '99999';
   var isOpen = false;
   var notifyIframe = function (action) {
     if (!iframe.contentWindow) return;
@@ -287,6 +289,7 @@ class EmbedService {
       ? Math.max(0, Math.min(40, chatbot.settings.cornerRadius))
       : 24;
     const baseRadius = rounded ? cornerRadius : 0;
+    const launcherRadiusValue = rounded ? `${Math.max(18, cornerRadius)}px` : '12px';
     const radiusXl = `${baseRadius}px`;
     const radiusLg = `${Math.max(0, baseRadius - 6)}px`;
     const radiusMd = `${Math.max(0, baseRadius - 12)}px`;
@@ -512,11 +515,26 @@ class EmbedService {
       width: 58px;
       height: 58px;
       border: 0;
-      border-radius: 999px;
+      border-radius: ${launcherRadiusValue};
       padding: 0;
       background: var(--launcher-bg);
       box-shadow: var(--shadow);
       cursor: pointer;
+    }
+    body.standalone {
+      background: transparent;
+    }
+    body.standalone .shell {
+      position: fixed;
+      ${launcherHorizontalEdge}: 18px;
+      ${launcherVerticalEdge}: 88px;
+      width: min(420px, calc(100vw - 36px));
+      height: min(680px, calc(100vh - 106px));
+      border-radius: var(--radius-xl);
+      border: 1px solid var(--border-soft);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      z-index: 9;
     }
     body.preview .standalone-launcher {
       position: absolute;
@@ -1744,7 +1762,14 @@ class EmbedService {
         applyComposerState(false, defaultPlaceholder);
       }
 
-      setWidgetHidden(false);
+      // When the iframe is opened on its own (not embedded by the install
+      // script) behave like the script does: float a launcher in the corner
+      // and keep the chat collapsed until the visitor opens it.
+      const standalone = !isEmbedded();
+      if (standalone) {
+        document.body.classList.add('standalone');
+      }
+      setWidgetHidden(standalone);
     })();
   </script>
 </body>

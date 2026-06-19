@@ -71,10 +71,15 @@ class ConversationRepository {
       { $match: { chatbotId } },
       {
         $project: {
-          messagesCount: { $size: '$messages' },
+          messagesCount: { $size: { $ifNull: ['$messages', []] } },
           hasLead: {
             $cond: [
-              { $gt: [{ $size: { $objectToArray: '$visitor' } }, 0] },
+              {
+                $gt: [
+                  { $size: { $objectToArray: { $ifNull: ['$visitor', {}] } } },
+                  0,
+                ],
+              },
               1,
               0,
             ],
