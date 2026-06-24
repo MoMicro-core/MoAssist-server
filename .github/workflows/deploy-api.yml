@@ -1,39 +1,39 @@
-name: Deploy API to Lightsail
-
-on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
-
-concurrency:
-  group: deploy-api-main
-  cancel-in-progress: true
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Prepare SSH
-        run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          cat > ~/.ssh/key <<'EOF'
-          ${{ secrets.LIGHTSAIL_SSH_KEY }}
-          EOF
-          chmod 600 ~/.ssh/key
-          ssh-keyscan -H "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts
-
-      - name: Deploy on Lightsail
-        run: |
-          ssh -i ~/.ssh/key "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" <<'EOF'
-            set -e
-            export NVM_DIR="$HOME/.nvm"
-            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-
-            cd /var/www/MoAssist-server
-            git pull
-            npm install
-            pm2 restart assistant-api || pm2 start npm --name assistant-api -- start
-          EOF
+# name: Deploy API to Lightsail
+#
+# on:
+#   push:
+#     branches:
+#       - main
+#   workflow_dispatch:
+#
+# concurrency:
+#   group: deploy-api-main
+#   cancel-in-progress: true
+#
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+#
+#     steps:
+#       - name: Prepare SSH
+#         run: |
+#           mkdir -p ~/.ssh
+#           chmod 700 ~/.ssh
+#           cat > ~/.ssh/key <<'EOF'
+#           ${{ secrets.LIGHTSAIL_SSH_KEY }}
+#           EOF
+#           chmod 600 ~/.ssh/key
+#           ssh-keyscan -H "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts
+#
+#       - name: Deploy on Lightsail
+#         run: |
+#           ssh -i ~/.ssh/key "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" <<'EOF'
+#             set -e
+#             export NVM_DIR="$HOME/.nvm"
+#             [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+#
+#             cd /var/www/MoAssist-server
+#             git pull
+#             npm install
+#             pm2 restart assistant-api || pm2 start npm --name assistant-api -- start
+#           EOF
