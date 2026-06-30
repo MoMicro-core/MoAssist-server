@@ -20,12 +20,14 @@ class KnowledgeService {
     vectorStore,
     fileStorage,
     tierCatalog,
+    openai,
   }) {
     this.chatbotRepository = chatbotRepository;
     this.knowledgeFileRepository = knowledgeFileRepository;
     this.vectorStore = vectorStore;
     this.fileStorage = fileStorage;
     this.tierCatalog = tierCatalog;
+    this.openai = openai;
   }
 
   async list(actor, chatbotId) {
@@ -114,6 +116,9 @@ class KnowledgeService {
     const knowledgeFiles =
       await this.knowledgeFileRepository.listByChatbot(chatbotId);
     await this.vectorStore.rebuildIndex(chatbotId, knowledgeFiles);
+    await this.refreshBusinessSummary(chatbotId, knowledgeFiles).catch(
+      () => null,
+    );
 
     return created;
   }
@@ -138,8 +143,64 @@ class KnowledgeService {
     const knowledgeFiles =
       await this.knowledgeFileRepository.listByChatbot(chatbotId);
     await this.vectorStore.rebuildIndex(chatbotId, knowledgeFiles);
+    await this.refreshBusinessSummary(chatbotId, knowledgeFiles).catch(
+      () => null,
+    );
 
     return { deleted: true };
+  }
+
+  async refreshBusinessSummary(chatbotId, knowledgeFiles) {
+    const files = knowledgeFiles
+      ? knowledgeFiles
+      : await this.knowledgeFileRepository.listByChatbot(chatbotId);
+
+    if (!files.length) {
+      await this.chatbotRepository.updateById(chatbotId, {
+        'settings.ai.businessSummary': '',
+      });
+      return '';
+    }
+
+    if (!this.openai) return null;
+
+    const sections = [];
+    for (const file of files) {
+      try {
+        const content = await fs.readFile(file.textPath, 'utf8');
+        if (content.trim()) {
+          sections.push(`# ${file.name}\n${content.trim()}`);
+        }
+      } catch {
+        // Skip files whose extracted text is unreadable.
+      }
+    }
+
+    const material = sections.join('\n\n').slice(0, 12000).trim();
+    if (!material) return null;
+
+    const summary = await this.openai.createChatCompletion({
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You write a concise business profile for an AI support chatbot. From the uploaded knowledge material, describe in 1 to 3 plain sentences what this business is and what it offers (products, services, who it serves). Write only the summary — no preamble, headings, quotes, or markdown. Use neutral third-person. Never invent details that are not supported by the material. If the material is too sparse to tell, reply with a single sentence stating only what can be confirmed.',
+        },
+        {
+          role: 'user',
+          content: `Knowledge material:\n\n${material}`,
+        },
+      ],
+    });
+
+    const trimmed = typeof summary === 'string' ? summary.trim() : '';
+    if (trimmed) {
+      await this.chatbotRepository.updateById(chatbotId, {
+        'settings.ai.businessSummary': trimmed,
+      });
+    }
+
+    return trimmed;
   }
 
   async search(chatbotId, query, limit = 5) {

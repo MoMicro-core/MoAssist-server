@@ -1,4 +1,10 @@
-import type { Actor, KnowledgeFile, UploadFile, VectorSearchResult } from '../../../types';
+import type {
+  Actor,
+  KnowledgeFile,
+  OpenAIGateway,
+  UploadFile,
+  VectorSearchResult,
+} from '../../../types';
 import type { TierCatalog } from '../../../shared/application/premium';
 import type { ChatbotRepository } from '../../chatbots/infrastructure/chatbot-repository';
 import type { KnowledgeFileRepository } from '../infrastructure/knowledge-file-repository';
@@ -10,6 +16,7 @@ export class KnowledgeService {
     knowledgeFileRepository: KnowledgeFileRepository;
     vectorStore: VectorStore;
     tierCatalog: TierCatalog;
+    openai: OpenAIGateway;
   });
 
   list(actor: Actor, chatbotId: string): Promise<KnowledgeFile[]>;
@@ -18,7 +25,15 @@ export class KnowledgeService {
     chatbotId: string,
     files: UploadFile[],
   ): Promise<KnowledgeFile[]>;
-  delete(actor: Actor, chatbotId: string, fileId: string): Promise<{ deleted: true }>;
+  delete(
+    actor: Actor,
+    chatbotId: string,
+    fileId: string,
+  ): Promise<{ deleted: true }>;
+  refreshBusinessSummary(
+    chatbotId: string,
+    knowledgeFiles?: KnowledgeFile[],
+  ): Promise<string | null>;
   search(
     chatbotId: string,
     query: string,

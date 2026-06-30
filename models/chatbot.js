@@ -126,9 +126,18 @@ module.exports = {
           default: 'medium',
           enum: ['short', 'medium', 'long'],
         },
+        mood: {
+          type: String,
+          default: 'normal',
+          enum: ['friendly', 'normal', 'professional'],
+        },
         guidelines: {
           type: String,
           default: 'Answer clearly, politely and only using available context.',
+        },
+        businessSummary: {
+          type: String,
+          default: '',
         },
       },
       translations: {

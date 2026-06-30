@@ -141,6 +141,7 @@ const createServices = async (fastify) => {
     }),
     fileStorage: fastify.supabaseStorage,
     tierCatalog,
+    openai: fastify.openai,
   });
 
   const responderFactory = new ResponderFactory({

@@ -13,6 +13,7 @@ export type BillingTierCapability = string;
 export type ChatbotStatus = 'draft' | 'published';
 export type WidgetLocation = 'left' | 'right' | 'top-left' | 'top-right';
 export type ResponseLength = 'short' | 'medium' | 'long';
+export type ChatbotMood = 'friendly' | 'normal' | 'professional';
 export type ConversationStatus = 'active' | 'pending' | 'closed';
 export type ChatAuthorType = 'visitor' | 'owner' | 'assistant';
 export type ChatMessageAuthor = 'human' | 'ai';
@@ -157,7 +158,9 @@ export interface ChatbotSettings {
     enabled: boolean;
     template: string;
     responseLength: ResponseLength;
+    mood: ChatbotMood;
     guidelines: string;
+    businessSummary: string;
   };
   translations?: Record<string, ChatbotLanguagePack>;
   translationSourceHash?: string;
