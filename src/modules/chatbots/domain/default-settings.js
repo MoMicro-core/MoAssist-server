@@ -17,6 +17,10 @@ const createDefaultChatbotSettings = () => ({
   domains: ['*'],
   suggestedMessages: [],
   leadsFormTitle: 'Leave your contact information',
+  leadsFormDescription:
+    'Leave your details and continue chatting. Your session stays active so we can follow up.',
+  leadsFormSubmitLabel: 'Continue',
+  leadsFormSkipLabel: 'Skip',
   leadsForm: [
     {
       key: 'name',
@@ -46,6 +50,9 @@ const createDefaultChatbotSettings = () => ({
       textColor: '#173a55',
       accentTextColor: '#fcfff8',
       borderColor: '#beebf0',
+      suggestionBackgroundColor: '',
+      suggestionTextColor: '',
+      suggestionBorderColor: '',
     },
     dark: {
       accentColor: '#5cd7d3',
@@ -56,14 +63,15 @@ const createDefaultChatbotSettings = () => ({
       textColor: '#ecfdff',
       accentTextColor: '#0b1c2a',
       borderColor: '#214d6f',
+      suggestionBackgroundColor: '',
+      suggestionTextColor: '',
+      suggestionBorderColor: '',
     },
   },
   ai: {
     enabled: false,
-    template: 'Support assistant',
     responseLength: 'medium',
     mood: 'normal',
-    guidelines: 'Answer clearly, politely and only using available context.',
     businessSummary: '',
   },
   translations: {},

@@ -214,7 +214,6 @@ describe('chatbot tier access', () => {
 
     expect(install.dashboardInstallEnabled).toBe(false);
     expect(install.dashboardScriptSnippet).toBe('');
-    expect(install.dashboardIframeSnippet).toBe('');
   });
 
   test('install payload exposes admin dashboard embed on auth tier', async () => {
@@ -242,9 +241,9 @@ describe('chatbot tier access', () => {
     expect(install.dashboardScriptSnippet).toContain(
       '/chat/dashboard/script/cb-auth-install',
     );
-    expect(install.dashboardIframeSnippet).toContain(
-      '/chat/dashboard/iframe/cb-auth-install',
-    );
+    // The dashboard embed now authenticates via its own login, so the snippet
+    // must not carry a session token.
+    expect(install.dashboardScriptSnippet).not.toContain('sessionToken');
   });
 
   test('free tier cannot upload a custom chatbot logo', async () => {

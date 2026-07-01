@@ -7,6 +7,7 @@ const { createId } = require('../../../shared/application/ids');
 const { deepMerge } = require('../../../shared/application/object');
 const {
   canManageOwnerResource,
+  canAccessChatbotResource,
 } = require('../../../shared/application/permissions');
 const {
   ForbiddenError,
@@ -24,9 +25,10 @@ const LANGUAGE_PACK_FIELDS = new Set([
   'inputPlaceholder',
   'suggestedMessages',
   'leadsFormTitle',
+  'leadsFormDescription',
+  'leadsFormSubmitLabel',
+  'leadsFormSkipLabel',
   'leadsFormLabels',
-  'aiTemplate',
-  'aiGuidelines',
 ]);
 const LANGUAGE_ALIASES = {
   en: 'english',
@@ -111,11 +113,12 @@ const extractLanguagePack = (settings = {}) => ({
   inputPlaceholder: getText(settings.inputPlaceholder, ''),
   suggestedMessages: getTextArray(settings.suggestedMessages),
   leadsFormTitle: getText(settings.leadsFormTitle, ''),
+  leadsFormDescription: getText(settings.leadsFormDescription, ''),
+  leadsFormSubmitLabel: getText(settings.leadsFormSubmitLabel, ''),
+  leadsFormSkipLabel: getText(settings.leadsFormSkipLabel, ''),
   leadsFormLabels: Array.isArray(settings.leadsForm)
     ? settings.leadsForm.map((field) => getText(field?.label, ''))
     : [],
-  aiTemplate: getText(settings.ai?.template, ''),
-  aiGuidelines: getText(settings.ai?.guidelines, ''),
 });
 
 const normalizeIndexedArray = (value = [], fallback = []) =>
@@ -140,12 +143,22 @@ const normalizeLanguagePack = (pack = {}, fallbackPack = {}) => ({
     pack.leadsFormTitle,
     fallbackPack.leadsFormTitle || '',
   ),
+  leadsFormDescription: getText(
+    pack.leadsFormDescription,
+    fallbackPack.leadsFormDescription || '',
+  ),
+  leadsFormSubmitLabel: getText(
+    pack.leadsFormSubmitLabel,
+    fallbackPack.leadsFormSubmitLabel || '',
+  ),
+  leadsFormSkipLabel: getText(
+    pack.leadsFormSkipLabel,
+    fallbackPack.leadsFormSkipLabel || '',
+  ),
   leadsFormLabels: normalizeIndexedArray(
     pack.leadsFormLabels,
     fallbackPack.leadsFormLabels || [],
   ),
-  aiTemplate: getText(pack.aiTemplate, fallbackPack.aiTemplate || ''),
-  aiGuidelines: getText(pack.aiGuidelines, fallbackPack.aiGuidelines || ''),
 });
 
 const applyLanguagePack = (settings = {}, pack = {}) => {
@@ -155,16 +168,13 @@ const applyLanguagePack = (settings = {}, pack = {}) => {
   settings.inputPlaceholder = pack.inputPlaceholder;
   settings.suggestedMessages = pack.suggestedMessages;
   settings.leadsFormTitle = pack.leadsFormTitle;
+  settings.leadsFormDescription = pack.leadsFormDescription;
+  settings.leadsFormSubmitLabel = pack.leadsFormSubmitLabel;
+  settings.leadsFormSkipLabel = pack.leadsFormSkipLabel;
   settings.leadsForm = (settings.leadsForm || []).map((field, index) => ({
     ...field,
     label: pack.leadsFormLabels[index] || getText(field?.label, ''),
   }));
-  const aiSettings = settings.ai || {};
-  settings.ai = {
-    ...aiSettings,
-    template: pack.aiTemplate,
-    guidelines: pack.aiGuidelines,
-  };
 };
 
 const createLanguageHash = (language, content) =>
@@ -230,8 +240,9 @@ const validateLanguagePatch = (patch = {}, sourcePack = {}) => {
   assertString('initialMessage');
   assertString('inputPlaceholder');
   assertString('leadsFormTitle');
-  assertString('aiTemplate');
-  assertString('aiGuidelines');
+  assertString('leadsFormDescription');
+  assertString('leadsFormSubmitLabel');
+  assertString('leadsFormSkipLabel');
 
   if (patch.suggestedMessages !== undefined) {
     if (
@@ -271,9 +282,12 @@ const mergeLanguagePack = (currentPack = {}, patch = {}) => ({
   inputPlaceholder: patch.inputPlaceholder ?? currentPack.inputPlaceholder,
   suggestedMessages: patch.suggestedMessages ?? currentPack.suggestedMessages,
   leadsFormTitle: patch.leadsFormTitle ?? currentPack.leadsFormTitle,
+  leadsFormDescription:
+    patch.leadsFormDescription ?? currentPack.leadsFormDescription,
+  leadsFormSubmitLabel:
+    patch.leadsFormSubmitLabel ?? currentPack.leadsFormSubmitLabel,
+  leadsFormSkipLabel: patch.leadsFormSkipLabel ?? currentPack.leadsFormSkipLabel,
   leadsFormLabels: patch.leadsFormLabels ?? currentPack.leadsFormLabels,
-  aiTemplate: patch.aiTemplate ?? currentPack.aiTemplate,
-  aiGuidelines: patch.aiGuidelines ?? currentPack.aiGuidelines,
 });
 
 const parseJsonResponse = (value = '') => {
@@ -376,8 +390,8 @@ class ChatbotService {
   requiresCustomBranding(requestedBrand = {}) {
     return Boolean(
       normalizeBrandValue(requestedBrand.logoUrl) ||
-      normalizeBrandValue(requestedBrand.logoBackgroundColor) ||
-      normalizeBrandValue(requestedBrand.bubbleIconUrl),
+        normalizeBrandValue(requestedBrand.logoBackgroundColor) ||
+        normalizeBrandValue(requestedBrand.bubbleIconUrl),
     );
   }
 
@@ -628,9 +642,9 @@ class ChatbotService {
 
     const ordered = selected.includes(normalizedDefault)
       ? [
-        normalizedDefault,
-        ...selected.filter((language) => language !== normalizedDefault),
-      ]
+          normalizedDefault,
+          ...selected.filter((language) => language !== normalizedDefault),
+        ]
       : [normalizedDefault, ...selected];
 
     return ordered.length ? ordered : [normalizedDefault];
@@ -939,7 +953,7 @@ class ChatbotService {
   async getForActor(actor, chatbotId) {
     const chatbot = await this.chatbotRepository.findById(chatbotId);
     if (!chatbot) throw new NotFoundError('Chatbot not found');
-    if (!canManageOwnerResource(actor, chatbot.ownerUid)) {
+    if (!canAccessChatbotResource(actor, chatbot.ownerUid, chatbotId)) {
       throw new ForbiddenError('Chatbot is not accessible');
     }
     return this.decorateChatbot(chatbot);
@@ -1141,7 +1155,6 @@ class ChatbotService {
     const scriptUrl = `${baseUrl}/chat/script/${chatbot.id}`;
     const iframeUrl = `${baseUrl}/chat/iframe/${chatbot.id}`;
     const dashboardScriptUrl = `${baseUrl}/chat/dashboard/script/${chatbot.id}`;
-    const dashboardIframeUrl = `${baseUrl}/chat/dashboard/iframe/${chatbot.id}`;
     const installLanguage = this.normalizeDefaultLanguage(
       chatbot.settings?.defaultLanguage,
       false,
@@ -1149,20 +1162,24 @@ class ChatbotService {
     const dashboardInstallEnabled =
       chatbot.featureAccess?.authenticatedWidget === true;
 
+    // Native iOS/Android apps have no <iframe>; they load this URL inside a
+    // WebView (WKWebView / android.webkit.WebView / react-native-webview /
+    // webview_flutter). It is the same standalone widget page, so it floats its
+    // own launcher and animates open/close inside the WebView viewport.
+    const mobileUrl = `${iframeUrl}?lang=${installLanguage}`;
+
     return {
       chatbotId: chatbot.id,
       scriptUrl,
       iframeUrl,
+      mobileUrl,
       dashboardInstallEnabled,
       dashboardScriptUrl: dashboardInstallEnabled ? dashboardScriptUrl : '',
-      dashboardIframeUrl: dashboardInstallEnabled ? dashboardIframeUrl : '',
       scriptSnippet: `<script src="${scriptUrl}?lang=${installLanguage}" defer></script>`,
-      iframeSnippet: `<iframe src="${iframeUrl}?lang=${installLanguage}" title="${chatbot.settings.botName}" style="width:420px;height:680px;border:0;"></iframe>`,
+      // One script tag. It authenticates with its own username/password inside
+      // the embed (no token), and reads where to mount from data- attributes.
       dashboardScriptSnippet: dashboardInstallEnabled
-        ? `<script>window.MOMICRO_ASSIST_DASHBOARD_CONFIG = window.MOMICRO_ASSIST_DASHBOARD_CONFIG || {}; window.MOMICRO_ASSIST_DASHBOARD_CONFIG["${chatbot.id}"] = { sessionToken: "YOUR_SESSION_TOKEN", selector: "#momicro-dashboard-root", height: "760px" };</script>\n<script src="${dashboardScriptUrl}" defer></script>`
-        : '',
-      dashboardIframeSnippet: dashboardInstallEnabled
-        ? `<iframe src="${dashboardIframeUrl}?sessionToken=YOUR_SESSION_TOKEN" title="${chatbot.settings.botName} Dashboard" style="width:100%;height:760px;border:0;border-radius:24px;"></iframe>`
+        ? `<script src="${dashboardScriptUrl}" data-selector="#momicro-dashboard-root" data-height="760px" defer></script>`
         : '',
     };
   }

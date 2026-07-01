@@ -12,7 +12,6 @@ const createChatbot = (overrides = {}) => ({
     initialMessage: 'Ask anything about plans, onboarding, or support.',
     inputPlaceholder: 'Write your question...',
     inputHeight: 48,
-    auth: true,
     inactivityHours: 6,
     defaultLanguage: 'german',
     widgetLocation: 'left',
@@ -53,9 +52,8 @@ const createChatbot = (overrides = {}) => ({
     },
     ai: {
       enabled: true,
-      template: 'Support assistant',
       responseLength: 'medium',
-      guidelines: 'Answer clearly.',
+      mood: 'normal',
     },
     ...overrides,
   },
@@ -74,6 +72,9 @@ describe('embed service', () => {
     expect(script).toContain(`data.action === 'hide'`);
     expect(script).toContain(`data.action === 'open'`);
     expect(script).toContain(`notifyIframe(isOpen ? 'open' : 'hide')`);
+    // The script wraps its own launcher/panel, so the iframe it loads must opt
+    // out of the standalone launcher.
+    expect(script).toContain('/chat/iframe/chatbot-1?embedded=1&lang=');
   });
 
   test('iframe embed exposes polished ui controls and uses key widget settings', () => {
@@ -81,7 +82,6 @@ describe('embed service', () => {
     const html = service.renderIframe({
       chatbot: createChatbot(),
       baseUrl: 'https://api.example.com',
-      authClient: 'website-user-7',
     });
 
     expect(html).toContain(
@@ -118,5 +118,35 @@ describe('embed service', () => {
     expect(html).toContain(`type: 'momicro-assist-preview'`);
     expect(html).toContain('"selectedPart":"composer"');
     expect(html).toContain('"conversation"');
+  });
+
+  test('iframe enters standalone mode via the standalone flag and animates open/close', () => {
+    const service = new EmbedService();
+    const html = service.renderIframe({
+      chatbot: createChatbot(),
+      baseUrl: 'https://api.example.com',
+    });
+
+    // The iframe page defaults to the floating standalone widget; only the
+    // install script opts out with embedded=1.
+    expect(html).toContain(
+      `new URLSearchParams(window.location.search).get('embedded') !== '1'`,
+    );
+    // The collapsed shell animates (opacity/transform) instead of snapping
+    // away with display:none.
+    expect(html).toContain('body.standalone.widget-hidden .shell {');
+    expect(html).toContain(
+      'transition: opacity 200ms ease, transform 240ms ease;',
+    );
+    // The standalone body stays transparent so nothing shows when collapsed.
+    expect(html).toContain('body.standalone {\n      background: transparent;');
+    // ...and the root is forced transparent with a neutral color-scheme so a
+    // dark-mode OS does not paint a black canvas behind the iframe.
+    expect(html).toContain(
+      `document.documentElement.style.background = 'transparent';`,
+    );
+    expect(html).toContain(
+      `document.documentElement.style.colorScheme = 'normal';`,
+    );
   });
 });

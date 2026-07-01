@@ -4,7 +4,11 @@ module.exports = {
   properties: {
     token: { type: String, required: true, unique: true },
     uid: { type: String, required: true, index: true },
-    role: { type: String, required: true, enum: ['user', 'admin'] },
+    role: {
+      type: String,
+      required: true,
+      enum: ['user', 'admin', 'dashboard'],
+    },
     fcmToken: { type: String, default: '' },
     data: { type: Object, required: true },
     expiresAt: { type: Date, required: true },

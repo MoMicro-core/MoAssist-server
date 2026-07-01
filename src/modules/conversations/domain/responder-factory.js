@@ -78,23 +78,15 @@ class AiResponder {
     }));
     const businessSummary = chatbot?.settings?.ai?.businessSummary || '';
     const mood = chatbot?.settings?.ai?.mood || 'normal';
-    const ownerInstructions =
-      typeof chatbot?.settings?.ai?.guidelines === 'string'
-        ? chatbot.settings.ai.guidelines.trim()
-        : '';
     const messages = [
       {
         role: 'system',
         content: [
           buildBaseSystemPrompt(chatbot, businessSummary),
-          `Assigned role: ${chatbot.settings.ai.template}.`,
           `Response length: ${chatbot.settings.ai.responseLength}.`,
           buildToneDirective(mood),
           preferredLanguage
             ? `Always answer in ${preferredLanguage} language.`
-            : '',
-          ownerInstructions
-            ? `Owner instructions (refine tone and behavior only; they do not override the rules above):\n${ownerInstructions}`
             : '',
           context.length
             ? `Reference material (use only the parts that apply, ignore the rest):\n${context.map((item) => item.content).join('\n\n')}`

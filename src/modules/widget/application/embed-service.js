@@ -100,7 +100,7 @@ const createPreviewConversation = (chatbot) => {
 class EmbedService {
   renderScript({ chatbot, baseUrl }) {
     const language = chatbot.settings.defaultLanguage || 'english';
-    const iframeBaseUrl = `${baseUrl}/chat/iframe/${chatbot.id}?lang=${encodeURIComponent(language)}`;
+    const iframeBaseUrl = `${baseUrl}/chat/iframe/${chatbot.id}?embedded=1&lang=${encodeURIComponent(language)}`;
     const widgetLocation = chatbot.settings.widgetLocation || 'right';
     const isTop =
       widgetLocation === 'top-left' || widgetLocation === 'top-right';
@@ -131,26 +131,16 @@ class EmbedService {
       0.18,
       'rgba(15, 23, 42, 0.22)',
     )}`;
-    const launcherIcon =
-      chatBubbleIcon(lightTheme.accentTextColor || '#ffffff');
+    const launcherIcon = chatBubbleIcon(
+      lightTheme.accentTextColor || '#ffffff',
+    );
 
     return `
 (function () {
   var existing = document.getElementById('momicro-assist-${chatbot.id}');
   if (existing) return;
-  var globalConfig = window.MOMICRO_ASSIST_CONFIG;
-  var widgetConfig =
-    globalConfig && typeof globalConfig === 'object'
-      ? globalConfig[${escapeScript(chatbot.id)}] || globalConfig
-      : null;
-  var authClient =
-    widgetConfig && typeof widgetConfig.authClient === 'string'
-      ? widgetConfig.authClient
-      : '';
   var chatbotId = ${escapeScript(chatbot.id)};
-  var iframeSrc =
-    ${escapeScript(iframeBaseUrl)} +
-    (authClient ? '&authClient=' + encodeURIComponent(authClient) : '');
+  var iframeSrc = ${escapeScript(iframeBaseUrl)};
   var wrapper = document.createElement('div');
   wrapper.id = 'momicro-assist-${chatbot.id}';
   wrapper.style.position = 'fixed';
@@ -271,10 +261,24 @@ class EmbedService {
 `.trim();
   }
 
-  renderIframe({ chatbot, baseUrl, authClient = '', preview = null }) {
+  renderIframe({ chatbot, baseUrl, preview = null }) {
     const websocketUrl = `${toWebsocketUrl(baseUrl)}/ws`;
     const lightTheme = chatbot.settings.theme.light;
     const darkTheme = chatbot.settings.theme.dark;
+    // Optional per-mode overrides for suggestion chips. Only emitted when the
+    // owner set a value, so blank falls back to the theme (via the var() default
+    // in the .suggestion-chip rule).
+    const suggestionVars = (theme) =>
+      [
+        theme.suggestionBackgroundColor &&
+          `--suggestion-bg: ${theme.suggestionBackgroundColor};`,
+        theme.suggestionTextColor &&
+          `--suggestion-text: ${theme.suggestionTextColor};`,
+        theme.suggestionBorderColor &&
+          `--suggestion-border: ${theme.suggestionBorderColor};`,
+      ]
+        .filter(Boolean)
+        .join(' ');
     const widgetLocation = chatbot.settings.widgetLocation || 'right';
     const launcherIsTop =
       widgetLocation === 'top-left' || widgetLocation === 'top-right';
@@ -282,6 +286,10 @@ class EmbedService {
       widgetLocation === 'left' || widgetLocation === 'top-left';
     const launcherVerticalEdge = launcherIsTop ? 'top' : 'bottom';
     const launcherHorizontalEdge = launcherIsLeft ? 'left' : 'right';
+    const standaloneTransformOrigin = `${launcherIsTop ? 'top' : 'bottom'} ${
+      launcherIsLeft ? 'left' : 'right'
+    }`;
+    const standaloneClosedShift = launcherIsTop ? '-18px' : '18px';
     const previewEnabled = Boolean(preview?.enabled);
     const previewMode = preview?.mode === 'dark' ? 'dark' : 'light';
     const rounded = chatbot.settings.rounded !== false;
@@ -289,21 +297,23 @@ class EmbedService {
       ? Math.max(0, Math.min(40, chatbot.settings.cornerRadius))
       : 24;
     const baseRadius = rounded ? cornerRadius : 0;
-    const launcherRadiusValue = rounded ? `${Math.max(18, cornerRadius)}px` : '12px';
+    const launcherRadiusValue = rounded
+      ? `${Math.max(18, cornerRadius)}px`
+      : '12px';
     const radiusXl = `${baseRadius}px`;
     const radiusLg = `${Math.max(0, baseRadius - 6)}px`;
     const radiusMd = `${Math.max(0, baseRadius - 12)}px`;
     const radiusSm = `${Math.max(0, baseRadius - 14)}px`;
     const brandIconUrl =
       chatbot.settings.brand.logoUrl || chatbot.settings.brand.bubbleIconUrl;
-    const launcherIcon =
-      chatBubbleIcon(lightTheme.accentTextColor || '#ffffff');
+    const launcherIcon = chatBubbleIcon(
+      lightTheme.accentTextColor || '#ffffff',
+    );
     const closeSvg = closeIcon(lightTheme.accentTextColor || '#111111');
     const payload = {
       chatbot,
       apiBaseUrl: baseUrl,
       websocketUrl,
-      authClient,
     };
     if (previewEnabled) {
       payload.preview = {
@@ -360,6 +370,7 @@ class EmbedService {
         0.65,
         lightTheme.borderColor,
       )};
+      ${suggestionVars(lightTheme)}
       --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || lightTheme.surfaceColor};
       --input-bg: ${lightTheme.inputBackgroundColor || lightTheme.surfaceColor};
       --radius-xl: ${radiusXl};
@@ -436,6 +447,7 @@ class EmbedService {
         0.65,
         lightTheme.borderColor,
       )};
+      ${suggestionVars(lightTheme)}
       --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || lightTheme.surfaceColor};
       --launcher-bg: ${lightTheme.launcherBackgroundColor || lightTheme.accentColor};
       --input-bg: ${lightTheme.inputBackgroundColor || lightTheme.surfaceColor};
@@ -482,6 +494,7 @@ class EmbedService {
         0.72,
         darkTheme.borderColor,
       )};
+      ${suggestionVars(darkTheme)}
       --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || darkTheme.surfaceColor};
       --launcher-bg: ${darkTheme.launcherBackgroundColor || darkTheme.accentColor};
       --input-bg: ${darkTheme.inputBackgroundColor || darkTheme.surfaceColor};
@@ -535,6 +548,14 @@ class EmbedService {
       box-shadow: var(--shadow);
       overflow: hidden;
       z-index: 9;
+      transform-origin: ${standaloneTransformOrigin};
+      transition: opacity 200ms ease, transform 240ms ease;
+    }
+    body.standalone.widget-hidden .shell {
+      display: grid;
+      opacity: 0;
+      transform: translateY(${standaloneClosedShift}) scale(0.98);
+      pointer-events: none;
     }
     body.preview .standalone-launcher {
       position: absolute;
@@ -752,6 +773,35 @@ class EmbedService {
     .composer.locked {
       opacity: 0.7;
     }
+    .suggestions {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding-bottom: 10px;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+    }
+    .suggestions::-webkit-scrollbar { display: none; }
+    .suggestions:empty { display: none; }
+    .suggestion-chip {
+      flex: 0 0 auto;
+      white-space: nowrap;
+      border: 1px solid var(--suggestion-border, var(--border-soft));
+      background: var(--suggestion-bg, var(--surface));
+      color: var(--suggestion-text, inherit);
+      border-radius: 999px;
+      padding: 7px 13px;
+      font: inherit;
+      font-size: 13px;
+      line-height: 1.2;
+      cursor: pointer;
+      transition: background 150ms ease, border-color 150ms ease;
+    }
+    .suggestion-chip:hover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
     .row {
       display: grid;
       grid-template-columns: 1fr auto;
@@ -844,6 +894,7 @@ class EmbedService {
     .field label {
       font-size: 12px;
       opacity: 0.8;
+      color: var(--text);
     }
     .field input {
       border: 1px solid var(--border-soft);
@@ -851,7 +902,7 @@ class EmbedService {
       padding: 10px 12px;
       font: inherit;
       color: inherit;
-      background: rgba(255, 255, 255, 0.88);
+      background: var(--input-bg);
     }
     .actions {
       display: flex;
@@ -923,6 +974,7 @@ class EmbedService {
           0.72,
           darkTheme.borderColor,
         )};
+        ${suggestionVars(darkTheme)}
         --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || darkTheme.surfaceColor};
         --input-bg: ${darkTheme.inputBackgroundColor || darkTheme.surfaceColor};
         --shadow: 0 28px 64px ${withAlpha(
@@ -974,6 +1026,7 @@ class EmbedService {
     </header>
     <main id="messages" class="messages" data-preview-part="canvas"></main>
     <footer id="composer" class="composer" data-preview-part="composer">
+      <div id="suggestions" class="suggestions" data-preview-part="suggestions"></div>
       <div class="row">
         <textarea id="input" rows="1" placeholder="${chatbot.settings.inputPlaceholder}"></textarea>
         <button id="send" class="send" type="button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M14.76 12H6.832m0 0c0-.275-.057-.55-.17-.808L4.285 5.814c-.76-1.72 1.058-3.442 2.734-2.591L20.8 10.217c1.46.74 1.46 2.826 0 3.566L7.02 20.777c-1.677.851-3.495-.872-2.735-2.591l2.375-5.378A2 2 0 0 0 6.83 12"/></svg></button>
@@ -985,13 +1038,14 @@ class EmbedService {
   </div>
   ${previewEnabled ? '</div>' : ''}
   <div id="overlay" class="overlay">
-    <div class="card">
+    <div class="card" data-preview-part="leadForm">
+      <button id="closeLead" type="button" aria-label="${chatbot.settings.leadsFormSkipLabel}" title="${chatbot.settings.leadsFormSkipLabel}" style="position:absolute;top:10px;right:12px;border:0;background:transparent;font-size:24px;line-height:1;cursor:pointer;color:inherit;opacity:.55;padding:2px 6px;display:none">&times;</button>
       <h2>${chatbot.settings.leadsFormTitle}</h2>
-      <p>Leave your details and continue chatting. Your session stays active for up to ${chatbot.settings.inactivityHours} hours after your last message.</p>
+      <p>${chatbot.settings.leadsFormDescription}</p>
       <form id="leadForm"></form>
       <div class="actions">
-        <button id="cancelLead" type="button" class="ghost">Cancel</button>
-        <button id="submitLead" type="button" class="primary">Continue</button>
+        <button id="cancelLead" type="button" class="ghost">${chatbot.settings.leadsFormSkipLabel}</button>
+        <button id="submitLead" type="button" class="primary">${chatbot.settings.leadsFormSubmitLabel}</button>
       </div>
     </div>
   </div>
@@ -1007,10 +1061,12 @@ class EmbedService {
       const messages = document.getElementById('messages');
       const input = document.getElementById('input');
       const send = document.getElementById('send');
+      const suggestions = document.getElementById('suggestions');
       const overlay = document.getElementById('overlay');
       const leadForm = document.getElementById('leadForm');
       const submitLead = document.getElementById('submitLead');
       const cancelLead = document.getElementById('cancelLead');
+      const closeLead = document.getElementById('closeLead');
       const hideChat = document.getElementById('hideChat');
       const standaloneLauncher = document.getElementById('standaloneLauncher');
       const composer = document.getElementById('composer');
@@ -1088,6 +1144,12 @@ class EmbedService {
           .forEach((node) => {
             node.removeAttribute('data-preview-selected');
           });
+
+        // In preview, reveal the lead overlay only while it is the selected part
+        // so owners can style it; every other part hides it again.
+        if (previewEnabled) {
+          overlay.style.display = part === 'leadForm' ? 'flex' : 'none';
+        }
 
         if (!part) return;
 
@@ -1461,9 +1523,7 @@ class EmbedService {
 
         if (status === 'closed') {
           applyComposerState(true, 'This chat is closed');
-          if (!runtime.chatbot.settings.auth) {
-            localStorage.removeItem(storageKey);
-          }
+          localStorage.removeItem(storageKey);
           return;
         }
 
@@ -1519,25 +1579,6 @@ class EmbedService {
 
       const handleSocketError = async (packet) => {
         const message = packet?.payload?.message || 'Widget request failed';
-        const code = packet?.payload?.code || '';
-
-        if (runtime.chatbot.settings.auth && (code === 'forbidden' || code === 'bad_request' || code === 'not_found')) {
-          localStorage.removeItem(storageKey);
-          widgetToken = '';
-          currentConversation = null;
-          if (socket) socket.close();
-          socket = null;
-          if (runtime.authClient) {
-            try {
-              await createSession();
-              return;
-            } catch (error) {
-              alert(error.message);
-              return;
-            }
-          }
-        }
-
         alert(message);
       };
 
@@ -1552,8 +1593,7 @@ class EmbedService {
           socket.send(JSON.stringify({
             action: 'widget.authenticate',
             payload: {
-              token: widgetToken,
-              authClient: runtime.authClient || ''
+              token: widgetToken
             }
           }));
         });
@@ -1657,6 +1697,14 @@ class EmbedService {
         }
       });
 
+      // Lead form configuration drives whether visitors must (or can) leave
+      // their details before chatting.
+      var leadFields = runtime.chatbot.settings.leadsForm || [];
+      var hasLeadFields = leadFields.length > 0;
+      var hasRequiredLead = leadFields.some(function (field) {
+        return field && field.required;
+      });
+
       const createSession = async () => {
         const visitor = {};
         Array.from(leadForm.elements).forEach((element) => {
@@ -1669,8 +1717,7 @@ class EmbedService {
             chatbotId: runtime.chatbot.id,
             token: widgetToken,
             visitor,
-            language: runtime.chatbot.settings.defaultLanguage || 'english',
-            authClient: runtime.authClient || ''
+            language: runtime.chatbot.settings.defaultLanguage || 'english'
           })
         });
         const payload = await response.json();
@@ -1690,19 +1737,40 @@ class EmbedService {
         input.value = '';
       };
 
+      const hideSuggestions = () => {
+        if (suggestions) suggestions.innerHTML = '';
+      };
+
+      const renderSuggestions = () => {
+        if (!suggestions) return;
+        const items = (runtime.chatbot.settings.suggestedMessages || []).filter(
+          (item) => typeof item === 'string' && item.trim(),
+        );
+        suggestions.innerHTML = '';
+        items.forEach((text) => {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'suggestion-chip';
+          chip.textContent = text;
+          chip.addEventListener('click', () => {
+            input.value = text;
+            dispatchMessage();
+          });
+          suggestions.appendChild(chip);
+        });
+      };
+
       const dispatchMessage = async () => {
         const text = input.value.trim();
         if (!text) return;
         if (currentConversation && currentConversation.status === 'closed') return;
-
-        if (runtime.chatbot.settings.auth && !runtime.authClient) {
-          alert('authClient is required for this chatbot');
-          return;
-        }
+        hideSuggestions();
 
         if (!widgetToken) {
           queuedMessage = text;
-          if (runtime.chatbot.settings.auth) {
+          // No lead fields configured: start the conversation straight away,
+          // never showing a lead overlay.
+          if (!hasLeadFields) {
             try {
               await createSession();
             } catch (error) {
@@ -1725,6 +1793,7 @@ class EmbedService {
       };
 
       renderLeadForm();
+      renderSuggestions();
       hideChat.addEventListener('click', requestHideWidget);
       standaloneLauncher.addEventListener('click', () => {
         setWidgetHidden(false);
@@ -1744,30 +1813,65 @@ class EmbedService {
           alert(error.message);
         }
       });
-      cancelLead.addEventListener('click', () => {
+      cancelLead.addEventListener('click', async () => {
+        // No required fields: dismissing skips the form and keeps the chat going.
+        // Required fields present: dismissing cancels and drops the queued message.
+        if (!hasRequiredLead) {
+          try {
+            await createSession();
+          } catch (error) {
+            alert(error.message);
+          }
+          return;
+        }
         overlay.style.display = 'none';
         queuedMessage = '';
       });
 
+      // When the lead form has no required fields, let the visitor dismiss it
+      // with an "×" and keep chatting without leaving any details.
+      const leadCard = overlay.querySelector('.card');
+      if (leadCard) leadCard.style.position = 'relative';
+      if (closeLead) {
+        if (hasRequiredLead) {
+          closeLead.style.display = 'none';
+        } else {
+          closeLead.style.display = '';
+          closeLead.addEventListener('click', async () => {
+            try {
+              await createSession();
+            } catch (error) {
+              alert(error.message);
+            }
+          });
+        }
+      }
+
       if (widgetToken) {
         connectSocket();
-      } else if (runtime.chatbot.settings.auth && runtime.authClient) {
-        createSession().catch((error) => {
-          alert(error.message);
-          addMessage('system', runtime.chatbot.settings.initialMessage);
-          applyComposerState(false, defaultPlaceholder);
-        });
       } else {
         addMessage('system', runtime.chatbot.settings.initialMessage);
         applyComposerState(false, defaultPlaceholder);
       }
 
-      // When the iframe is opened on its own (not embedded by the install
-      // script) behave like the script does: float a launcher in the corner
-      // and keep the chat collapsed until the visitor opens it.
-      const standalone = !isEmbedded();
+      // The iframe page IS the widget: by default it floats its own launcher,
+      // keeps the chat collapsed and transparent until opened, and animates
+      // open/close — exactly like the install script's panel. The only consumer
+      // that wants the bare chat (no launcher) is the install script, which
+      // wraps its own launcher/panel and opts out with embedded=1. Preview mode
+      // also stays non-standalone.
+      const standalone =
+        !previewEnabled &&
+        new URLSearchParams(window.location.search).get('embedded') !== '1';
       if (standalone) {
         document.body.classList.add('standalone');
+        // Keep the iframe itself transparent. The document declares
+        // color-scheme: light dark, so on a visitor whose OS is in dark mode
+        // the browser would paint an opaque dark canvas behind the transparent
+        // body (the "black background"). Forcing the root transparent with a
+        // neutral color-scheme lets the page composite over the host instead.
+        document.documentElement.style.background = 'transparent';
+        document.documentElement.style.colorScheme = 'normal';
       }
       setWidgetHidden(standalone);
     })();
@@ -1783,26 +1887,25 @@ class EmbedService {
 (function () {
   var existing = document.getElementById('momicro-assist-dashboard-${chatbotId}');
   if (existing) return;
+  var current =
+    document.currentScript ||
+    document.querySelector(
+      'script[src*=' + JSON.stringify(${escapeScript(`/chat/dashboard/script/${chatbotId}`)}) + ']'
+    );
   var globalConfig = window.MOMICRO_ASSIST_DASHBOARD_CONFIG;
   var dashboardConfig =
     globalConfig && typeof globalConfig === 'object'
       ? globalConfig[${escapeScript(chatbotId)}] || globalConfig
       : null;
-  var sessionToken =
-    dashboardConfig && typeof dashboardConfig.sessionToken === 'string'
-      ? dashboardConfig.sessionToken
-      : '';
   var selector =
-    dashboardConfig && typeof dashboardConfig.selector === 'string'
-      ? dashboardConfig.selector
-      : '';
+    (current && current.getAttribute('data-selector')) ||
+    (dashboardConfig && dashboardConfig.selector) ||
+    '';
   var height =
-    dashboardConfig && typeof dashboardConfig.height === 'string'
-      ? dashboardConfig.height
-      : '760px';
-  var iframeSrc =
-    ${escapeScript(iframeBaseUrl)} +
-    (sessionToken ? '?sessionToken=' + encodeURIComponent(sessionToken) : '');
+    (current && current.getAttribute('data-height')) ||
+    (dashboardConfig && dashboardConfig.height) ||
+    '760px';
+  var iframeSrc = ${escapeScript(iframeBaseUrl)};
   var host = selector ? document.querySelector(selector) : null;
   if (!host) {
     host = document.createElement('div');
@@ -1864,6 +1967,72 @@ class EmbedService {
         var(--bg);
       color: var(--text);
     }
+    .login-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background:
+        radial-gradient(circle at top left, rgba(20, 184, 166, 0.18), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(15, 118, 110, 0.12), transparent 24%),
+        var(--bg);
+    }
+    .login-overlay[hidden] { display: none; }
+    .login-card {
+      width: 100%;
+      max-width: 380px;
+      background: var(--surface-strong);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .login-head { display: flex; flex-direction: column; gap: 4px; }
+    .login-head h2 { margin: 0; font-size: 20px; font-weight: 600; }
+    .login-sub { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+    .field input {
+      height: 44px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0 14px;
+      font-size: 15px;
+      color: var(--text);
+      background: #ffffff;
+      outline: none;
+      transition: border-color 150ms ease, box-shadow 150ms ease;
+    }
+    .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .login-error {
+      margin: 0;
+      color: var(--danger);
+      font-size: 13px;
+      background: var(--danger-soft);
+      padding: 10px 12px;
+      border-radius: 10px;
+    }
+    .login-error[hidden] { display: none; }
+    .login-submit { height: 46px; margin-top: 4px; }
+    .ghost-button {
+      align-self: flex-start;
+      margin-top: 10px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 6px 14px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: color 150ms ease, border-color 150ms ease;
+    }
+    .ghost-button[hidden] { display: none; }
+    .ghost-button:hover { color: var(--text); border-color: var(--accent); }
     .shell {
       height: 100vh;
       padding: 18px;
@@ -2189,6 +2358,25 @@ class EmbedService {
   </style>
 </head>
 <body>
+  <div id="loginOverlay" class="login-overlay" hidden>
+    <form id="loginForm" class="login-card">
+      <div class="login-head">
+        <span class="eyebrow">Team sign in</span>
+        <h2>Dashboard login</h2>
+        <p class="login-sub">Sign in with the username and password set by the chatbot owner.</p>
+      </div>
+      <label class="field">
+        <span>Username</span>
+        <input id="loginUsername" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required />
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input id="loginPassword" type="password" autocomplete="current-password" required />
+      </label>
+      <p id="loginError" class="login-error" role="alert" hidden></p>
+      <button id="loginSubmit" class="button primary login-submit" type="submit">Sign in</button>
+    </form>
+  </div>
   <div class="shell">
     <div class="frame">
       <aside class="panel sidebar">
@@ -2196,6 +2384,7 @@ class EmbedService {
           <span class="eyebrow">Owner Inbox</span>
           <h1 id="chatbotTitle">Loading dashboard</h1>
           <p id="chatbotSubtitle">Live conversations for your chatbot.</p>
+          <button id="signOut" class="ghost-button" type="button" hidden>Sign out</button>
         </div>
         <div id="statusBar" class="status-bar"></div>
         <div id="conversationList" class="conversation-list"></div>
@@ -2232,6 +2421,16 @@ class EmbedService {
   <script>
     (() => {
       const runtime = window.MOMICRO_OWNER_DASHBOARD;
+      const dashboardTokenKey = 'momicro-dashboard-session:' + runtime.chatbotId;
+      const dashboardNameKey = 'momicro-dashboard-name:' + runtime.chatbotId;
+      runtime.sessionToken = localStorage.getItem(dashboardTokenKey) || '';
+      const loginOverlay = document.getElementById('loginOverlay');
+      const loginForm = document.getElementById('loginForm');
+      const loginUsername = document.getElementById('loginUsername');
+      const loginPassword = document.getElementById('loginPassword');
+      const loginError = document.getElementById('loginError');
+      const loginSubmit = document.getElementById('loginSubmit');
+      const signOutButton = document.getElementById('signOut');
       const chatbotTitle = document.getElementById('chatbotTitle');
       const chatbotSubtitle = document.getElementById('chatbotSubtitle');
       const statusBar = document.getElementById('statusBar');
@@ -2358,9 +2557,84 @@ class EmbedService {
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
+          if (response.status === 401) signOut();
           throw new Error(payload.message || 'Request failed');
         }
         return payload;
+      };
+
+      const showLogin = (message) => {
+        loginOverlay.hidden = false;
+        signOutButton.hidden = true;
+        if (message) {
+          loginError.textContent = message;
+          loginError.hidden = false;
+        } else {
+          loginError.hidden = true;
+        }
+        window.setTimeout(() => loginUsername.focus(), 50);
+      };
+
+      const hideLogin = () => {
+        loginOverlay.hidden = true;
+        loginError.hidden = true;
+        signOutButton.hidden = false;
+      };
+
+      const signOut = () => {
+        localStorage.removeItem(dashboardTokenKey);
+        localStorage.removeItem(dashboardNameKey);
+        runtime.sessionToken = '';
+        if (state.socket) {
+          try {
+            state.socket.close();
+          } catch (error) {
+            // ignore close errors
+          }
+          state.socket = null;
+        }
+        showLogin();
+      };
+
+      const handleLogin = async (event) => {
+        event.preventDefault();
+        const username = loginUsername.value.trim();
+        const password = loginPassword.value;
+        if (!username || !password) return;
+        loginSubmit.disabled = true;
+        loginError.hidden = true;
+        try {
+          const response = await fetch(
+            runtime.apiBaseUrl +
+              '/v1/chatbots/' +
+              runtime.chatbotId +
+              '/external-dashboard/login',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username: username, password: password }),
+            }
+          );
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || !payload.token) {
+            throw new Error(payload.message || 'Invalid username or password');
+          }
+          runtime.sessionToken = payload.token;
+          localStorage.setItem(dashboardTokenKey, payload.token);
+          if (payload.chatbot) {
+            localStorage.setItem(
+              dashboardNameKey,
+              payload.chatbot.botName || payload.chatbot.title || ''
+            );
+          }
+          loginPassword.value = '';
+          hideLogin();
+          await loadDashboard();
+        } catch (error) {
+          showLogin(error.message);
+        } finally {
+          loginSubmit.disabled = false;
+        }
       };
 
       const upsertConversation = (conversation) => {
@@ -3022,23 +3296,21 @@ class EmbedService {
 
       const loadDashboard = async () => {
         if (!runtime.sessionToken) {
-          setStatus('sessionToken is required for the owner dashboard embed.', true);
+          showLogin();
           return;
         }
 
         try {
-          const [chatbot, conversations] = await Promise.all([
-            api('/v1/chatbots/' + runtime.chatbotId),
-            api('/v1/chatbots/' + runtime.chatbotId + '/conversations'),
-          ]);
+          const conversations = await api(
+            '/v1/chatbots/' + runtime.chatbotId + '/conversations'
+          );
 
-          state.chatbot = chatbot;
           state.conversations = conversations
             .map(normalizeConversation)
             .sort(compareActivity);
 
           chatbotTitle.textContent =
-            chatbot.settings?.botName || chatbot.settings?.title || 'Inbox';
+            localStorage.getItem(dashboardNameKey) || 'Inbox';
           chatbotSubtitle.textContent =
             (state.conversations.length
               ? state.conversations.length + ' conversations loaded.'
@@ -3106,7 +3378,14 @@ class EmbedService {
         }
       });
 
-      loadDashboard();
+      loginForm.addEventListener('submit', handleLogin);
+      signOutButton.addEventListener('click', signOut);
+
+      if (runtime.sessionToken) {
+        loadDashboard();
+      } else {
+        showLogin();
+      }
     })();
   </script>
 </body>

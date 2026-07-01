@@ -36,7 +36,7 @@ module.exports = ({ services, fastify }) => ({
     },
   },
   'chatbot.subscribe': {
-    access: ['user', 'admin'],
+    access: ['user', 'admin', 'dashboard'],
     handler: async ({ connection, payload }) => {
       const chatbot = await services.chatbotService.getForActor(
         connection.principal,
@@ -50,7 +50,7 @@ module.exports = ({ services, fastify }) => ({
     },
   },
   'conversation.subscribe': {
-    access: ['user', 'admin'],
+    access: ['user', 'admin', 'dashboard'],
     handler: async ({ connection, payload }) => {
       const conversation = await services.conversationService.getForActor(
         connection.principal,
@@ -103,7 +103,7 @@ module.exports = ({ services, fastify }) => ({
     },
   },
   'owner.message': {
-    access: ['user', 'admin'],
+    access: ['user', 'admin', 'dashboard'],
     handler: async ({ connection, payload }) => {
       const result = await services.conversationService.sendOwnerMessage(
         connection.principal,
@@ -117,7 +117,7 @@ module.exports = ({ services, fastify }) => ({
     },
   },
   'conversation.close': {
-    access: ['user', 'admin'],
+    access: ['user', 'admin', 'dashboard'],
     handler: async ({ connection, payload }) => {
       const result = await services.conversationService.closeForActor(
         connection.principal,
@@ -130,7 +130,7 @@ module.exports = ({ services, fastify }) => ({
     },
   },
   'conversation.read': {
-    access: ['user', 'admin'],
+    access: ['user', 'admin', 'dashboard'],
     handler: async ({ connection, payload }) => {
       const result = await services.conversationService.markRead(
         connection.principal,

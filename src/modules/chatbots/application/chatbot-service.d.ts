@@ -55,9 +55,10 @@ export class ChatbotService {
       inputPlaceholder: string;
       suggestedMessages: string[];
       leadsFormTitle: string;
+      leadsFormDescription: string;
+      leadsFormSubmitLabel: string;
+      leadsFormSkipLabel: string;
       leadsFormLabels: string[];
-      aiTemplate: string;
-      aiGuidelines: string;
     }>,
   ): Promise<{
     language: string;
@@ -68,9 +69,10 @@ export class ChatbotService {
       inputPlaceholder: string;
       suggestedMessages: string[];
       leadsFormTitle: string;
+      leadsFormDescription: string;
+      leadsFormSubmitLabel: string;
+      leadsFormSkipLabel: string;
       leadsFormLabels: string[];
-      aiTemplate: string;
-      aiGuidelines: string;
     };
   }>;
   uploadLogo(actor: Actor, chatbotId: string, file: {
@@ -108,13 +110,11 @@ export class ChatbotService {
     chatbotId: string;
     scriptUrl: string;
     iframeUrl: string;
+    mobileUrl: string;
     dashboardInstallEnabled: boolean;
     dashboardScriptUrl: string;
-    dashboardIframeUrl: string;
     scriptSnippet: string;
-    iframeSnippet: string;
     dashboardScriptSnippet: string;
-    dashboardIframeSnippet: string;
   }>;
   getAnalytics(
     actor: Actor,

@@ -2,7 +2,8 @@
 
 const { createId } = require('../../../shared/application/ids');
 const {
-  canManageOwnerResource,
+  canAccessChatbotResource,
+  isDashboardActor,
 } = require('../../../shared/application/permissions');
 const {
   BadRequestError,
@@ -680,7 +681,7 @@ class ConversationService {
   async listForActor(actor, chatbotId) {
     const chatbot = await this.chatbotRepository.findById(chatbotId);
     if (!chatbot) throw new NotFoundError('Chatbot not found');
-    if (!canManageOwnerResource(actor, chatbot.ownerUid)) {
+    if (!canAccessChatbotResource(actor, chatbot.ownerUid, chatbotId)) {
       throw new ForbiddenError('Chatbot is not accessible');
     }
 
@@ -691,6 +692,9 @@ class ConversationService {
   }
 
   async listAllForActor(actor, filters = {}) {
+    if (isDashboardActor(actor)) {
+      throw new ForbiddenError('Conversation is not accessible');
+    }
     await this.syncConversationStatuses();
 
     const normalized = {};
@@ -707,7 +711,9 @@ class ConversationService {
     const document =
       await this.conversationRepository.findDocumentById(conversationId);
     if (!document) throw new NotFoundError('Conversation not found');
-    if (!canManageOwnerResource(actor, document.ownerUid)) {
+    if (
+      !canAccessChatbotResource(actor, document.ownerUid, document.chatbotId)
+    ) {
       throw new ForbiddenError('Conversation is not accessible');
     }
 
@@ -859,7 +865,9 @@ class ConversationService {
     const document =
       await this.conversationRepository.findDocumentById(conversationId);
     if (!document) throw new NotFoundError('Conversation not found');
-    if (!canManageOwnerResource(actor, document.ownerUid)) {
+    if (
+      !canAccessChatbotResource(actor, document.ownerUid, document.chatbotId)
+    ) {
       throw new ForbiddenError('Conversation is not accessible');
     }
 
@@ -918,7 +926,9 @@ class ConversationService {
     const document =
       await this.conversationRepository.findDocumentById(conversationId);
     if (!document) throw new NotFoundError('Conversation not found');
-    if (!canManageOwnerResource(actor, document.ownerUid)) {
+    if (
+      !canAccessChatbotResource(actor, document.ownerUid, document.chatbotId)
+    ) {
       throw new ForbiddenError('Conversation is not accessible');
     }
     if (isAuthConversation(document)) {
@@ -941,7 +951,9 @@ class ConversationService {
     const document =
       await this.conversationRepository.findDocumentById(conversationId);
     if (!document) throw new NotFoundError('Conversation not found');
-    if (!canManageOwnerResource(actor, document.ownerUid)) {
+    if (
+      !canAccessChatbotResource(actor, document.ownerUid, document.chatbotId)
+    ) {
       throw new ForbiddenError('Conversation is not accessible');
     }
 

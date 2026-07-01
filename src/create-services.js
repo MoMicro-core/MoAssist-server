@@ -86,6 +86,16 @@ const createServices = async (fastify) => {
     ['widget', 'application', 'embed-service'],
     'EmbedService',
   );
+  const ExternalDashboardCredentialRepository = getModuleExport(
+    modules,
+    ['dashboard', 'infrastructure', 'external-dashboard-credential-repository'],
+    'ExternalDashboardCredentialRepository',
+  );
+  const ExternalDashboardService = getModuleExport(
+    modules,
+    ['dashboard', 'application', 'external-dashboard-service'],
+    'ExternalDashboardService',
+  );
 
   const userRepository = new UserRepository(fastify.mongodb.user);
   const sessionRepository = new SessionRepository(fastify.mongodb.appSession);
@@ -161,6 +171,18 @@ const createServices = async (fastify) => {
 
   const embedService = new EmbedService();
 
+  const externalDashboardCredentialRepository =
+    new ExternalDashboardCredentialRepository(
+      fastify.mongodb.externalDashboardCredential,
+    );
+
+  const externalDashboardService = new ExternalDashboardService({
+    chatbotRepository,
+    credentialRepository: externalDashboardCredentialRepository,
+    sessionRepository,
+    tierCatalog,
+  });
+
   return {
     authService,
     billingService,
@@ -169,6 +191,7 @@ const createServices = async (fastify) => {
     knowledgeService,
     userRepository,
     embedService,
+    externalDashboardService,
   };
 };
 

@@ -67,6 +67,19 @@ module.exports = {
         type: String,
         default: 'Leave your contact information',
       },
+      leadsFormDescription: {
+        type: String,
+        default:
+          'Leave your details and continue chatting. Your session stays active so we can follow up.',
+      },
+      leadsFormSubmitLabel: {
+        type: String,
+        default: 'Continue',
+      },
+      leadsFormSkipLabel: {
+        type: String,
+        default: 'Skip',
+      },
       leadsForm: {
         type: [
           {
@@ -106,6 +119,9 @@ module.exports = {
           textColor: { type: String, default: '#173a55' },
           accentTextColor: { type: String, default: '#fcfff8' },
           borderColor: { type: String, default: '#beebf0' },
+          suggestionBackgroundColor: { type: String, default: '' },
+          suggestionTextColor: { type: String, default: '' },
+          suggestionBorderColor: { type: String, default: '' },
         },
         dark: {
           accentColor: { type: String, default: '#5cd7d3' },
@@ -116,11 +132,13 @@ module.exports = {
           textColor: { type: String, default: '#ecfdff' },
           accentTextColor: { type: String, default: '#0b1c2a' },
           borderColor: { type: String, default: '#214d6f' },
+          suggestionBackgroundColor: { type: String, default: '' },
+          suggestionTextColor: { type: String, default: '' },
+          suggestionBorderColor: { type: String, default: '' },
         },
       },
       ai: {
         enabled: { type: Boolean, default: false },
-        template: { type: String, default: 'Support assistant' },
         responseLength: {
           type: String,
           default: 'medium',
@@ -130,10 +148,6 @@ module.exports = {
           type: String,
           default: 'normal',
           enum: ['friendly', 'normal', 'professional'],
-        },
-        guidelines: {
-          type: String,
-          default: 'Answer clearly, politely and only using available context.',
         },
         businessSummary: {
           type: String,

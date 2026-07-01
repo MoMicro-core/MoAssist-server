@@ -336,7 +336,7 @@ module.exports = ({ services, fastify }) => [
   {
     method: 'GET',
     url: '/v1/chatbots/:chatbotId/conversations',
-    access: ['user', 'admin'],
+    access: ['user', 'admin', 'dashboard'],
     schema: {
       tags: ['Conversations'],
       summary: 'List chatbot conversations',
@@ -374,7 +374,7 @@ module.exports = ({ services, fastify }) => [
   {
     method: 'GET',
     url: '/v1/conversations/:conversationId',
-    access: ['user', 'admin'],
+    access: ['user', 'admin', 'dashboard'],
     schema: {
       tags: ['Conversations'],
       summary: 'Read a conversation',
@@ -388,7 +388,7 @@ module.exports = ({ services, fastify }) => [
   {
     method: 'POST',
     url: '/v1/conversations/:conversationId/messages',
-    access: ['user', 'admin'],
+    access: ['user', 'admin', 'dashboard'],
     schema: {
       tags: ['Conversations'],
       summary: 'Send an owner reply',
@@ -410,7 +410,7 @@ module.exports = ({ services, fastify }) => [
   {
     method: 'POST',
     url: '/v1/conversations/:conversationId/close',
-    access: ['user', 'admin'],
+    access: ['user', 'admin', 'dashboard'],
     schema: {
       tags: ['Conversations'],
       summary: 'Close a conversation',
@@ -424,7 +424,7 @@ module.exports = ({ services, fastify }) => [
   {
     method: 'POST',
     url: '/v1/conversations/:conversationId/read',
-    access: ['user', 'admin'],
+    access: ['user', 'admin', 'dashboard'],
     schema: {
       tags: ['Conversations'],
       summary: 'Mark a conversation as read',

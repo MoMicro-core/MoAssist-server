@@ -2,7 +2,7 @@ import type { Model } from 'mongoose';
 import type { auth } from 'firebase-admin';
 import type Stripe from 'stripe';
 
-export type Role = 'user' | 'admin';
+export type Role = 'user' | 'admin' | 'dashboard';
 export type PremiumStatus =
   | 'free'
   | 'active'
@@ -52,6 +52,7 @@ export interface UserPublic {
 export interface Actor {
   uid: string;
   role: Role;
+  dashboardChatbotId?: string;
   email?: string;
   name?: string;
   photoUrl?: string;
@@ -62,12 +63,16 @@ export interface Actor {
   stripeCustomerId?: string;
 }
 
+export interface DashboardSessionData {
+  dashboardChatbotId: string;
+}
+
 export interface AppSession {
   token: string;
   uid: string;
   role: Role;
   fcmToken: string;
-  data: UserPublic;
+  data: UserPublic | DashboardSessionData;
   expiresAt: Date;
   createdAt?: Date;
   updatedAt?: Date;
@@ -89,6 +94,9 @@ export interface ChatbotThemeVariant {
   textColor: string;
   accentTextColor: string;
   borderColor: string;
+  suggestionBackgroundColor: string;
+  suggestionTextColor: string;
+  suggestionBorderColor: string;
 }
 
 export interface ChatbotTheme {
@@ -125,9 +133,10 @@ export interface ChatbotLanguagePack {
   inputPlaceholder: string;
   suggestedMessages: string[];
   leadsFormTitle: string;
+  leadsFormDescription: string;
+  leadsFormSubmitLabel: string;
+  leadsFormSkipLabel: string;
   leadsFormLabels: string[];
-  aiTemplate: string;
-  aiGuidelines: string;
 }
 
 export interface ChatbotSettings {
@@ -147,6 +156,9 @@ export interface ChatbotSettings {
   domains: string[];
   suggestedMessages: string[];
   leadsFormTitle: string;
+  leadsFormDescription: string;
+  leadsFormSubmitLabel: string;
+  leadsFormSkipLabel: string;
   leadsForm: LeadField[];
   brand: {
     logoUrl: string;
@@ -156,10 +168,8 @@ export interface ChatbotSettings {
   theme: ChatbotTheme;
   ai: {
     enabled: boolean;
-    template: string;
     responseLength: ResponseLength;
     mood: ChatbotMood;
-    guidelines: string;
     businessSummary: string;
   };
   translations?: Record<string, ChatbotLanguagePack>;
@@ -353,6 +363,7 @@ export interface FastifyMongoModels {
   widgetSession: MongooseModel<WidgetSession>;
   subscription: MongooseModel<Subscription>;
   knowledgeFile: MongooseModel<KnowledgeFile>;
+  externalDashboardCredential: MongooseModel<ExternalDashboardCredential>;
 }
 
 export interface FastifyApp {
@@ -439,8 +450,31 @@ export interface AppSessionCreateInput {
   uid: string;
   role: Role;
   fcmToken?: string;
-  data: UserPublic;
+  data: UserPublic | DashboardSessionData;
   expiresAt: Date;
+}
+
+export interface ExternalDashboardCredential {
+  chatbotId: string;
+  ownerUid: string;
+  enabled: boolean;
+  username: string;
+  passwordHash: string;
+  passwordSalt: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface ExternalDashboardStatus {
+  enabled: boolean;
+  username: string;
+  hasPassword: boolean;
+}
+
+export interface ExternalDashboardLoginResult {
+  token: string;
+  expiresAt: Date;
+  chatbot: { id: string; title: string; botName: string };
 }
 
 export interface ChatbotCreateInput {

@@ -142,7 +142,6 @@ module.exports = ({ services, fastify }) => [
         type: 'object',
         properties: {
           lang: { type: 'string' },
-          authClient: { type: 'string' },
         },
       },
     },
@@ -158,7 +157,6 @@ module.exports = ({ services, fastify }) => [
       return services.embedService.renderIframe({
         chatbot,
         baseUrl,
-        authClient: request.query?.authClient || '',
       });
     },
   },
