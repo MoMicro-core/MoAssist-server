@@ -126,6 +126,68 @@ class VectorStore {
     };
   }
 
+  // Rewrites a knowledge file's local artifacts from backed-up buffers (no
+  // re-chunking, no re-embedding) — used by the boot-time restore.
+  async restoreKnowledgeFile({
+    chatbotId,
+    fileId,
+    fileName,
+    buffer,
+    text,
+    manifestBuffer,
+    vectorsBuffer,
+  }) {
+    const directories = await this.ensureChatbotDirectory(chatbotId);
+    const safeName = sanitizeFileName(fileName);
+    const directory = path.join(directories.knowledgeDirectory, fileId);
+    await fs.mkdir(directory, { recursive: true });
+
+    const originalPath = path.join(
+      directories.uploadsDirectory,
+      `${fileId}-${safeName}`,
+    );
+    const textPath = path.join(directory, 'source.txt');
+    const manifestPath = path.join(directory, 'manifest.json');
+    const vectorsPath = path.join(directory, 'vectors.bin');
+
+    await Promise.all([
+      fs.writeFile(originalPath, buffer),
+      fs.writeFile(textPath, text, 'utf8'),
+      fs.writeFile(manifestPath, manifestBuffer),
+      fs.writeFile(vectorsPath, vectorsBuffer),
+    ]);
+
+    let chunksCount = 0;
+    try {
+      const manifest = JSON.parse(manifestBuffer.toString('utf8'));
+      chunksCount = Array.isArray(manifest.chunks) ? manifest.chunks.length : 0;
+    } catch {
+      // Keep the record's existing chunksCount when the manifest is odd.
+    }
+
+    return {
+      directory,
+      originalPath,
+      textPath,
+      manifestPath,
+      vectorsPath,
+      chunksCount,
+    };
+  }
+
+  hasIndex(chatbotId) {
+    const indexDirectory = path.join(
+      this.baseDirectory,
+      'chatbots',
+      chatbotId,
+      'index',
+    );
+    return (
+      existsSync(path.join(indexDirectory, 'manifest.json')) &&
+      existsSync(path.join(indexDirectory, 'vectors.bin'))
+    );
+  }
+
   async rebuildIndex(chatbotId, files) {
     const directories = await this.ensureChatbotDirectory(chatbotId);
     const manifestEntries = [];
@@ -170,7 +232,7 @@ class VectorStore {
     return this.openai.createEmbeddings(chunks);
   }
 
-  async search(chatbotId, query, limit = 5) {
+  async search(chatbotId, query, limit = 5, queryVector = null) {
     const indexDirectory = path.join(
       this.baseDirectory,
       'chatbots',
@@ -182,9 +244,14 @@ class VectorStore {
 
     if (!existsSync(manifestPath) || !existsSync(vectorsPath)) return [];
 
+    // A caller that already embedded the query (e.g. for connector intent
+    // routing) can pass the vector in to avoid a second embedding call.
+    const hasVector = Array.isArray(queryVector) && queryVector.length > 0;
     const [manifestRaw, vector] = await Promise.all([
       fs.readFile(manifestPath, 'utf8'),
-      this.openai.createEmbedding(query),
+      hasVector
+        ? Promise.resolve(queryVector)
+        : this.openai.createEmbedding(query),
     ]);
 
     const manifest = JSON.parse(manifestRaw);

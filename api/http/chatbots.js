@@ -53,9 +53,15 @@ module.exports = ({ services, fastify }) => [
     schema: {
       tags: ['Chatbots'],
       summary: 'List chatbots',
+      querystring: {
+        type: 'object',
+        properties: {
+          ownerUid: { type: 'string' },
+        },
+      },
     },
     handler: async (request) =>
-      services.chatbotService.list(request.appSession),
+      services.chatbotService.list(request.appSession, request.query || {}),
   },
   {
     method: 'POST',
@@ -362,6 +368,7 @@ module.exports = ({ services, fastify }) => [
             enum: ['active', 'pending', 'closed'],
           },
           chatbotId: { type: 'string' },
+          ownerUid: { type: 'string' },
         },
       },
     },

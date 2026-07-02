@@ -85,6 +85,7 @@ module.exports = ({ services, fastify }) => [
           visitor: { type: 'object' },
           language: { type: 'string' },
           authClient: { type: 'string' },
+          realtimeToken: { type: 'string' },
         },
       },
     },
@@ -93,15 +94,28 @@ module.exports = ({ services, fastify }) => [
       const viewerLocale = request.viewer.locale || {};
       const locale = { ...viewerLocale };
       if (request.body.language) locale.language = request.body.language;
-      return services.conversationService.createOrRestoreWidgetSession({
-        chatbotId: request.body.chatbotId,
-        token: request.body.token,
-        visitor: request.body.visitor || {},
-        language: request.body.language || '',
-        authClient: request.body.authClient || '',
-        origin,
-        locale,
-      });
+      const session =
+        await services.conversationService.createOrRestoreWidgetSession({
+          chatbotId: request.body.chatbotId,
+          token: request.body.token,
+          visitor: request.body.visitor || {},
+          language: request.body.language || '',
+          authClient: request.body.authClient || '',
+          origin,
+          locale,
+        });
+
+      if (request.body.realtimeToken) {
+        services.realtimeService
+          .verifyForWidget({
+            chatbotId: request.body.chatbotId,
+            widgetToken: session.token,
+            token: request.body.realtimeToken,
+          })
+          .catch(() => null);
+      }
+
+      return session;
     },
   },
   {
@@ -142,6 +156,7 @@ module.exports = ({ services, fastify }) => [
         type: 'object',
         properties: {
           lang: { type: 'string' },
+          realtimeToken: { type: 'string' },
         },
       },
     },

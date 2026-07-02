@@ -695,13 +695,19 @@ class ConversationService {
     if (isDashboardActor(actor)) {
       throw new ForbiddenError('Conversation is not accessible');
     }
+    // ownerUid lets the connector admin list another user's conversations;
+    // it is rejected for everyone else (docs/momicro-connector-prd.md §5).
+    const ownerUid = String(filters.ownerUid || '').trim();
+    if (ownerUid && actor.role !== 'admin') {
+      throw new ForbiddenError('ownerUid filter requires an admin');
+    }
     await this.syncConversationStatuses();
 
     const normalized = {};
     if (filters.status) normalized.status = filters.status;
     if (filters.chatbotId) normalized.chatbotId = filters.chatbotId;
     const conversations = await this.conversationRepository.listByOwner(
-      actor.uid,
+      ownerUid || actor.uid,
       normalized,
     );
     return conversations.map(mapConversation);

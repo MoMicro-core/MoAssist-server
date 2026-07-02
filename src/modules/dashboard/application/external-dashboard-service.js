@@ -69,8 +69,7 @@ class ExternalDashboardService {
 
   async setCredentials(actor, chatbotId, payload = {}) {
     const chatbot = await this.assertManageable(actor, chatbotId);
-    const existing =
-      await this.credentialRepository.findByChatbotId(chatbotId);
+    const existing = await this.credentialRepository.findByChatbotId(chatbotId);
 
     const enabled =
       typeof payload.enabled === 'boolean'

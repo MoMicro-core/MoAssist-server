@@ -10,6 +10,8 @@ export const TIER_CAPABILITIES: Readonly<{
   AUTHENTICATED_WIDGET: 'authenticated_widget';
   AI_RESPONDER: 'ai_responder';
   KNOWLEDGE_FILES: 'knowledge_files';
+  CUSTOM_BRANDING: 'custom_branding';
+  REALTIME_DATA: 'realtime_data';
 }>;
 
 export class TierPolicy {

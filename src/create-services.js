@@ -3,6 +3,7 @@
 const path = require('node:path');
 const { loadDir } = require('../lib/loader');
 const { createTierCatalog } = require('./shared/application/premium');
+const { SecretBox } = require('./shared/application/secret-box');
 
 const getModuleExport = (tree, pathParts, key) => {
   const target = pathParts.reduce((acc, item) => acc[item], tree);
@@ -96,6 +97,21 @@ const createServices = async (fastify) => {
     ['dashboard', 'application', 'external-dashboard-service'],
     'ExternalDashboardService',
   );
+  const ConnectorRepository = getModuleExport(
+    modules,
+    ['realtime', 'infrastructure', 'connector-repository'],
+    'ConnectorRepository',
+  );
+  const ConnectorRuntime = getModuleExport(
+    modules,
+    ['realtime', 'infrastructure', 'connector-runtime'],
+    'ConnectorRuntime',
+  );
+  const RealtimeService = getModuleExport(
+    modules,
+    ['realtime', 'application', 'realtime-service'],
+    'RealtimeService',
+  );
 
   const userRepository = new UserRepository(fastify.mongodb.user);
   const sessionRepository = new SessionRepository(fastify.mongodb.appSession);
@@ -152,12 +168,42 @@ const createServices = async (fastify) => {
     fileStorage: fastify.supabaseStorage,
     tierCatalog,
     openai: fastify.openai,
+    knowledgeBucket: fastify.config.supabase?.knowledgeBucket || '',
+    log: (line) => fastify.log?.info?.(line),
+  });
+
+  const realtimeLog = (line) => fastify.log?.info?.(line);
+  const realtimeBaseConfig = fastify.config.realtime || {};
+  const realtimeConfig = {
+    ...realtimeBaseConfig,
+    connectorsBucket: fastify.config.supabase?.connectorsBucket || '',
+  };
+  const connectorRepository = new ConnectorRepository(
+    fastify.mongodb.merchantConnector,
+  );
+  const connectorRuntime = new ConnectorRuntime({
+    openai: fastify.openai,
+    config: realtimeConfig,
+    log: realtimeLog,
+  });
+  const realtimeService = new RealtimeService({
+    chatbotRepository,
+    widgetSessionRepository,
+    connectorRepository,
+    connectorStorage: fastify.supabaseStorage,
+    runtime: connectorRuntime,
+    openai: fastify.openai,
+    tierCatalog,
+    secretBox: new SecretBox(realtimeConfig.secretsKey),
+    config: realtimeConfig,
+    log: realtimeLog,
   });
 
   const responderFactory = new ResponderFactory({
     openai: fastify.openai,
     knowledgeService,
     tierCatalog,
+    realtimeService,
   });
 
   const conversationService = new ConversationService({
@@ -183,6 +229,10 @@ const createServices = async (fastify) => {
     tierCatalog,
   });
 
+  fastify.addHook('onClose', async () => {
+    await connectorRuntime.stop();
+  });
+
   return {
     authService,
     billingService,
@@ -192,6 +242,7 @@ const createServices = async (fastify) => {
     userRepository,
     embedService,
     externalDashboardService,
+    realtimeService,
   };
 };
 

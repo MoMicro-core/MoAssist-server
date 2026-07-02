@@ -33,7 +33,10 @@ export class ChatbotService {
     tierCatalog: TierCatalog;
   });
 
-  list(actor: Actor): Promise<ChatbotWithMetrics[]>;
+  list(
+    actor: Actor,
+    filters?: { ownerUid?: string },
+  ): Promise<ChatbotWithMetrics[]>;
   create(
     actor: Actor,
     payload?: { settings?: Partial<ChatbotSettings> },

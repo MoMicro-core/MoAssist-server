@@ -43,9 +43,24 @@ export class VectorStore {
     embeddings: number[][];
     mimeType: string;
   }): Promise<KnowledgeFileArtifact>;
+  restoreKnowledgeFile(args: {
+    chatbotId: string;
+    fileId: string;
+    fileName: string;
+    buffer: Buffer;
+    text: string;
+    manifestBuffer: Buffer;
+    vectorsBuffer: Buffer;
+  }): Promise<KnowledgeFileArtifact>;
+  hasIndex(chatbotId: string): boolean;
   rebuildIndex(chatbotId: string, files: KnowledgeFile[]): Promise<IndexArtifact>;
   createEmbeddings(chunks: string[]): Promise<number[][]>;
-  search(chatbotId: string, query: string, limit?: number): Promise<VectorSearchResult[]>;
+  search(
+    chatbotId: string,
+    query: string,
+    limit?: number,
+    queryVector?: number[] | null,
+  ): Promise<VectorSearchResult[]>;
   searchWithBinary(
     vectorsPath: string,
     vector: number[],

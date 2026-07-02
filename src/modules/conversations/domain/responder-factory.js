@@ -60,14 +60,42 @@ class ManualResponder {
   }
 }
 
+const formatAsOf = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ''
+    : `${date.toISOString().slice(11, 16)} UTC`;
+};
+
 class AiResponder {
-  constructor({ openai, knowledgeService }) {
+  constructor({ openai, knowledgeService, realtimeService = null }) {
     this.openai = openai;
     this.knowledgeService = knowledgeService;
+    this.realtimeService = realtimeService;
   }
 
   async buildMessages({ chatbot, conversation, prompt }) {
-    const context = await this.knowledgeService.search(chatbot.id, prompt, 5);
+    // Embed the message once and share the vector between document RAG and
+    // the connector's intent router (Lever 1: no extra AI call for routing).
+    let embedding = null;
+    const realtimeActive = this.realtimeService
+      ? await this.realtimeService.isActive(chatbot)
+      : false;
+    if (realtimeActive) {
+      embedding = await this.openai.createEmbedding(prompt).catch(() => null);
+    }
+
+    const [context, live] = await Promise.all([
+      this.knowledgeService.search(chatbot.id, prompt, 5, embedding),
+      this.realtimeService && embedding
+        ? this.realtimeService.fetchLiveContext({
+            chatbot,
+            conversation,
+            prompt,
+            embedding,
+          })
+        : Promise.resolve(null),
+    ]);
     const preferredLanguage =
       typeof conversation?.locale?.language === 'string'
         ? conversation.locale.language
@@ -90,6 +118,9 @@ class AiResponder {
             : '',
           context.length
             ? `Reference material (use only the parts that apply, ignore the rest):\n${context.map((item) => item.content).join('\n\n')}`
+            : '',
+          live?.text
+            ? `Live account data for this visitor (as of ${formatAsOf(live.asOf)}), fetched from our systems. Treat it as the freshest information source under the INFORMATION rules:\n${live.text}`
             : '',
         ]
           .filter(Boolean)

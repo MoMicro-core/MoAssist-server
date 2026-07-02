@@ -14,6 +14,16 @@ class KnowledgeFileRepository {
     return this.model.find({ chatbotId }).sort({ updatedAt: -1 }).lean();
   }
 
+  async listAll() {
+    return this.model.find({}).lean();
+  }
+
+  async updateById(id, update) {
+    return this.model
+      .findOneAndUpdate({ id }, { $set: update }, { new: true })
+      .lean();
+  }
+
   async countByChatbot(chatbotId) {
     return this.model.countDocuments({ chatbotId });
   }

@@ -77,7 +77,15 @@ class BillingService {
   }
 
   async getSummary(actor, payload = {}) {
-    const user = await this.userRepository.findByUid(actor.uid);
+    // ownerUid lets the connector admin read another user's billing summary;
+    // it is rejected for everyone else (docs/momicro-connector-prd.md §5).
+    const ownerUid = String(payload.ownerUid || '').trim();
+    if (ownerUid && actor.role !== 'admin') {
+      throw new ForbiddenError('ownerUid filter requires an admin');
+    }
+    const targetUid = ownerUid || actor.uid;
+
+    const user = await this.userRepository.findByUid(targetUid);
     if (!user) throw new NotFoundError('User not found');
     const availableTiers = this.tierCatalog.list();
 
@@ -98,7 +106,7 @@ class BillingService {
       };
     }
 
-    const chatbots = await this.chatbotRepository.listByOwner(actor.uid);
+    const chatbots = await this.chatbotRepository.listByOwner(targetUid);
     const chatbotSummaries = await Promise.all(
       chatbots.map(async (chatbot) => {
         const normalized = await this.normalizeChatbotPremium(chatbot);

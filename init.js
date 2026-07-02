@@ -28,6 +28,14 @@ async function initFastify() {
   const services = await createServices(fastify);
   fastify.decorate('services', services);
 
+  // Mirror enabled connectors from Supabase into files/merchants/ and pull
+  // back any knowledge artifacts missing from files/chatbots/ (fresh server)
+  // so RAG works without re-uploading. Never blocks or fails boot.
+  queueMicrotask(() => {
+    services.realtimeService.syncAllOnBoot().catch(() => null);
+    services.knowledgeService.restoreMissingArtifacts().catch(() => null);
+  });
+
   const api = await loadDir(path.join(process.cwd(), './api'));
 
   registerHttpRoutes(fastify, invokeFactories(api.http, { services, fastify }));

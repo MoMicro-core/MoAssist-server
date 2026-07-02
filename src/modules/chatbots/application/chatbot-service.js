@@ -286,7 +286,8 @@ const mergeLanguagePack = (currentPack = {}, patch = {}) => ({
     patch.leadsFormDescription ?? currentPack.leadsFormDescription,
   leadsFormSubmitLabel:
     patch.leadsFormSubmitLabel ?? currentPack.leadsFormSubmitLabel,
-  leadsFormSkipLabel: patch.leadsFormSkipLabel ?? currentPack.leadsFormSkipLabel,
+  leadsFormSkipLabel:
+    patch.leadsFormSkipLabel ?? currentPack.leadsFormSkipLabel,
   leadsFormLabels: patch.leadsFormLabels ?? currentPack.leadsFormLabels,
 });
 
@@ -898,11 +899,22 @@ class ChatbotService {
     return settings;
   }
 
-  async list(actor) {
-    const chatbots =
-      actor.role === 'admin'
-        ? await this.chatbotRepository.listAll()
-        : await this.chatbotRepository.listByOwner(actor.uid);
+  async list(actor, filters = {}) {
+    // ownerUid lets the connector admin list another user's chatbots; it is
+    // rejected for everyone else (see docs/momicro-connector-prd.md §5).
+    const ownerUid = String(filters.ownerUid || '').trim();
+    if (ownerUid && actor.role !== 'admin') {
+      throw new ForbiddenError('ownerUid filter requires an admin');
+    }
+
+    let chatbots;
+    if (ownerUid) {
+      chatbots = await this.chatbotRepository.listByOwner(ownerUid);
+    } else if (actor.role === 'admin') {
+      chatbots = await this.chatbotRepository.listAll();
+    } else {
+      chatbots = await this.chatbotRepository.listByOwner(actor.uid);
+    }
 
     const enriched = [];
 

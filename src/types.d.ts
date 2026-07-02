@@ -256,10 +256,88 @@ export interface WidgetSession {
   visitorData: Record<string, string>;
   locale: Record<string, unknown>;
   origin: string;
+  realtimeUser: RealtimeUser | null;
+  realtimeVerifiedAt: Date | null;
+  realtimeSnapshot: Record<string, unknown> | null;
+  realtimeSnapshotAt: Date | null;
   lastActiveAt: Date;
   expiresAt: Date;
   createdAt?: Date;
   updatedAt?: Date;
+}
+
+export interface RealtimeUser {
+  id: string;
+  [key: string]: string | number | boolean | null;
+}
+
+export interface RealtimeIntent {
+  name: string;
+  phrases: string[];
+  endpoint: string;
+  args: string;
+  freshness: 'snapshot' | 'live';
+}
+
+export interface IntentVector {
+  name: string;
+  vector: number[];
+}
+
+export interface MerchantConnector {
+  chatbotId: string;
+  ownerUid: string;
+  enabled: boolean;
+  version: string;
+  storagePath: string;
+  baseUrl: string;
+  allowedHosts: string[];
+  secrets: { encrypted?: boolean; payload?: string };
+  intents: RealtimeIntent[];
+  intentVectors: IntentVector[];
+  intentsEmbeddedAt: Date | null;
+  routerThreshold: number;
+  routerMargin: number;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface MerchantConnectorStatus {
+  chatbotId: string;
+  enabled: boolean;
+  version: string;
+  storagePath: string;
+  baseUrl: string;
+  allowedHosts: string[];
+  intents: RealtimeIntent[];
+  routerThreshold: number;
+  routerMargin: number;
+  hasSecrets: boolean;
+  intentsEmbeddedAt: Date | null;
+  updatedAt: Date | null;
+  source: string;
+}
+
+export interface RealtimeLiveContext {
+  text: string;
+  asOf: Date;
+}
+
+export interface RealtimeConfig {
+  secretsKey: string;
+  merchantsDirectory: string;
+  connectorsBucket?: string;
+  workerCount: number;
+  workerMaxOldGenerationSizeMb: number;
+  workerQueueLimit: number;
+  verifyTimeoutMs: number;
+  fetchTimeoutMs: number;
+  snapshotTimeoutMs: number;
+  httpTimeoutMs: number;
+  maxResponseBytes: number;
+  identityTtlHours: number;
+  snapshotTtlMinutes: number;
+  maxContextChars: number;
 }
 
 export interface KnowledgeFile {
@@ -350,7 +428,10 @@ export interface AppConfig {
     url: string;
     serviceRoleKey: string;
     storageBucket: string;
+    connectorsBucket: string;
+    knowledgeBucket: string;
   };
+  realtime: RealtimeConfig;
 }
 
 export type MongooseModel<T> = Model<T>;
@@ -364,6 +445,7 @@ export interface FastifyMongoModels {
   subscription: MongooseModel<Subscription>;
   knowledgeFile: MongooseModel<KnowledgeFile>;
   externalDashboardCredential: MongooseModel<ExternalDashboardCredential>;
+  merchantConnector: MongooseModel<MerchantConnector>;
 }
 
 export interface FastifyApp {
@@ -371,11 +453,30 @@ export interface FastifyApp {
   stripe: StripeGateway;
   openai: OpenAIGateway;
   supabaseStorage: {
+    isConfigured(): boolean;
     uploadPublicObject(args: {
       objectPath: string;
       buffer: Buffer;
       mimeType?: string;
     }): Promise<{ objectPath: string; publicUrl: string }>;
+    uploadObject(args: {
+      bucket?: string;
+      objectPath: string;
+      buffer: Buffer;
+      mimeType?: string;
+    }): Promise<{ objectPath: string }>;
+    downloadObject(args: {
+      bucket?: string;
+      objectPath: string;
+    }): Promise<Buffer>;
+    ensureBucket(args: {
+      bucket: string;
+      isPublic?: boolean;
+    }): Promise<{ bucket: string; created: boolean }>;
+    deleteObject(args: {
+      bucket?: string;
+      objectPath: string;
+    }): Promise<{ objectPath: string }>;
   };
   config: AppConfig;
   firebaseAuth: auth.Auth | null;

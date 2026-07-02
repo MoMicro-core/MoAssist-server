@@ -51,6 +51,7 @@ const DEFAULT_BILLING_TIERS = Object.freeze([
       'ai_responder',
       'knowledge_files',
       'custom_branding',
+      'realtime_data',
     ],
     limits: {},
     metadata: {

@@ -41,6 +41,7 @@ module.exports = [
     },
   },
   {
-    ignores: ['static/**', 'node_modules/**'],
+    // files/** is runtime data (synced connectors, knowledge artifacts).
+    ignores: ['static/**', 'node_modules/**', 'files/**'],
   },
 ];

@@ -8,6 +8,7 @@ const TIER_CAPABILITIES = Object.freeze({
   AI_RESPONDER: 'ai_responder',
   KNOWLEDGE_FILES: 'knowledge_files',
   CUSTOM_BRANDING: 'custom_branding',
+  REALTIME_DATA: 'realtime_data',
 });
 
 const toPlainObject = (value = {}) =>

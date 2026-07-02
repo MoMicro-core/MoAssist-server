@@ -141,6 +141,19 @@ class EmbedService {
   if (existing) return;
   var chatbotId = ${escapeScript(chatbot.id)};
   var iframeSrc = ${escapeScript(iframeBaseUrl)};
+  // The host page can hand over the signed-in customer's auth token so the
+  // assistant can answer with live account data (verified server-side once):
+  // either data-realtime-token on the script tag or
+  // window.MOMICRO_ASSIST_CONFIG = { realtimeToken: '...' }.
+  var hostConfig = window.MOMICRO_ASSIST_CONFIG || {};
+  var scriptTag = document.currentScript;
+  var realtimeToken =
+    (scriptTag && scriptTag.getAttribute('data-realtime-token')) ||
+    hostConfig.realtimeToken ||
+    '';
+  if (realtimeToken) {
+    iframeSrc += '&realtimeToken=' + encodeURIComponent(realtimeToken);
+  }
   var wrapper = document.createElement('div');
   wrapper.id = 'momicro-assist-${chatbot.id}';
   wrapper.style.position = 'fixed';
@@ -1076,6 +1089,8 @@ class EmbedService {
         new URLSearchParams(window.location.search).get('inputHeight') || '',
         10,
       );
+      const realtimeToken =
+        new URLSearchParams(window.location.search).get('realtimeToken') || '';
       const configuredInputHeight = Number.parseInt(
         runtime.chatbot.settings.inputHeight || '',
         10,
@@ -1593,7 +1608,8 @@ class EmbedService {
           socket.send(JSON.stringify({
             action: 'widget.authenticate',
             payload: {
-              token: widgetToken
+              token: widgetToken,
+              realtimeToken: realtimeToken || undefined
             }
           }));
         });
@@ -1717,7 +1733,8 @@ class EmbedService {
             chatbotId: runtime.chatbot.id,
             token: widgetToken,
             visitor,
-            language: runtime.chatbot.settings.defaultLanguage || 'english'
+            language: runtime.chatbot.settings.defaultLanguage || 'english',
+            realtimeToken: realtimeToken || undefined
           })
         });
         const payload = await response.json();

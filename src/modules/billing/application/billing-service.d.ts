@@ -29,7 +29,7 @@ export class BillingService {
 
   getSummary(
     actor: Actor,
-    payload?: { chatbotId?: string },
+    payload?: { chatbotId?: string; ownerUid?: string },
   ): Promise<
     | {
         customerId: string;

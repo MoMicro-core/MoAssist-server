@@ -65,7 +65,11 @@ export class ConversationService {
 
   listAllForActor(
     actor: Actor,
-    filters?: { status?: 'active' | 'pending' | 'closed'; chatbotId?: string },
+    filters?: {
+      status?: 'active' | 'pending' | 'closed';
+      chatbotId?: string;
+      ownerUid?: string;
+    },
   ): Promise<ConversationView[]>;
   listForActor(actor: Actor, chatbotId: string): Promise<ConversationView[]>;
   getForActor(actor: Actor, conversationId: string): Promise<ConversationView>;

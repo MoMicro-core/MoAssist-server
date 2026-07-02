@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('node:fs/promises');
+const { existsSync } = require('node:fs');
 const {
   BadRequestError,
   ForbiddenError,
@@ -21,6 +22,8 @@ class KnowledgeService {
     fileStorage,
     tierCatalog,
     openai,
+    knowledgeBucket = 'chatbot-knowledge',
+    log = () => null,
   }) {
     this.chatbotRepository = chatbotRepository;
     this.knowledgeFileRepository = knowledgeFileRepository;
@@ -28,6 +31,78 @@ class KnowledgeService {
     this.fileStorage = fileStorage;
     this.tierCatalog = tierCatalog;
     this.openai = openai;
+    this.knowledgeBucket = knowledgeBucket;
+    this.log = log;
+    this.bucketReady = null;
+  }
+
+  storageBase(chatbotId, fileId) {
+    return `chatbots/${chatbotId}/knowledge/${fileId}`;
+  }
+
+  async ensureKnowledgeBucket() {
+    if (!this.bucketReady) {
+      this.bucketReady = this.fileStorage.ensureBucket({
+        bucket: this.knowledgeBucket,
+      });
+    }
+    return this.bucketReady;
+  }
+
+  // Mirrors every local artifact (original, extracted text, chunk manifest,
+  // vectors) into the private knowledge bucket so a fresh server can restore
+  // RAG without re-extracting or re-embedding anything.
+  async backupArtifacts({ chatbotId, fileId, file, text, artifact }) {
+    if (!this.fileStorage?.isConfigured?.()) return;
+    await this.ensureKnowledgeBucket();
+
+    const base = this.storageBase(chatbotId, fileId);
+    const [manifestBuffer, vectorsBuffer] = await Promise.all([
+      fs.readFile(artifact.manifestPath),
+      fs.readFile(artifact.vectorsPath),
+    ]);
+
+    await Promise.all([
+      this.fileStorage.uploadObject({
+        bucket: this.knowledgeBucket,
+        objectPath: `${base}/original`,
+        buffer: file.buffer,
+        mimeType: file.mimeType,
+      }),
+      this.fileStorage.uploadObject({
+        bucket: this.knowledgeBucket,
+        objectPath: `${base}/source.txt`,
+        buffer: Buffer.from(text, 'utf8'),
+        mimeType: 'text/plain',
+      }),
+      this.fileStorage.uploadObject({
+        bucket: this.knowledgeBucket,
+        objectPath: `${base}/manifest.json`,
+        buffer: manifestBuffer,
+        mimeType: 'application/json',
+      }),
+      this.fileStorage.uploadObject({
+        bucket: this.knowledgeBucket,
+        objectPath: `${base}/vectors.bin`,
+        buffer: vectorsBuffer,
+        mimeType: 'application/octet-stream',
+      }),
+    ]);
+  }
+
+  async deleteBackup(chatbotId, fileId) {
+    if (!this.fileStorage?.isConfigured?.()) return;
+    const base = this.storageBase(chatbotId, fileId);
+    await Promise.all(
+      ['original', 'source.txt', 'manifest.json', 'vectors.bin'].map((name) =>
+        this.fileStorage
+          .deleteObject({
+            bucket: this.knowledgeBucket,
+            objectPath: `${base}/${name}`,
+          })
+          .catch(() => null),
+      ),
+    );
   }
 
   async list(actor, chatbotId) {
@@ -85,14 +160,7 @@ class KnowledgeService {
         mimeType: file.mimeType,
       });
 
-      if (this.fileStorage?.isConfigured?.()) {
-        const objectPath = `chatbots/${chatbotId}/files/${fileId}-${file.fileName}`;
-        await this.fileStorage.uploadPublicObject({
-          objectPath,
-          buffer: file.buffer,
-          mimeType: file.mimeType,
-        });
-      }
+      await this.backupArtifacts({ chatbotId, fileId, file, text, artifact });
 
       const saved = await this.knowledgeFileRepository.create({
         id: fileId,
@@ -139,6 +207,7 @@ class KnowledgeService {
       this.knowledgeFileRepository.deleteById(fileId),
       fs.rm(file.directory, { recursive: true, force: true }),
     ]);
+    this.deleteBackup(chatbotId, fileId).catch(() => null);
 
     const knowledgeFiles =
       await this.knowledgeFileRepository.listByChatbot(chatbotId);
@@ -203,8 +272,108 @@ class KnowledgeService {
     return trimmed;
   }
 
-  async search(chatbotId, query, limit = 5) {
-    return this.vectorStore.search(chatbotId, query, limit);
+  hasLocalArtifacts(file) {
+    return (
+      Boolean(file.originalPath && file.textPath) &&
+      existsSync(file.originalPath) &&
+      existsSync(file.textPath) &&
+      existsSync(file.manifestPath) &&
+      existsSync(file.vectorsPath)
+    );
+  }
+
+  // Boot-time restore: any knowledge file whose local artifacts are missing
+  // (fresh server, wiped disk) is pulled back from the private knowledge
+  // bucket — no re-extraction, no re-embedding — and the per-chatbot search
+  // index is rebuilt from the restored per-file artifacts.
+  async restoreMissingArtifacts() {
+    if (!this.fileStorage?.isConfigured?.()) return { restored: 0, failed: 0 };
+
+    let files = [];
+    try {
+      files = await this.knowledgeFileRepository.listAll();
+    } catch (error) {
+      this.log(`knowledge restore skipped: ${error.message}`);
+      return { restored: 0, failed: 0 };
+    }
+    if (!files.length) return { restored: 0, failed: 0 };
+
+    let restored = 0;
+    let failed = 0;
+    const rebuildChatbots = new Set();
+
+    for (const file of files) {
+      if (this.hasLocalArtifacts(file)) {
+        if (!this.vectorStore.hasIndex(file.chatbotId)) {
+          rebuildChatbots.add(file.chatbotId);
+        }
+        continue;
+      }
+
+      try {
+        const base = this.storageBase(file.chatbotId, file.id);
+        const download = (name) =>
+          this.fileStorage.downloadObject({
+            bucket: this.knowledgeBucket,
+            objectPath: `${base}/${name}`,
+          });
+        const [buffer, textBuffer, manifestBuffer, vectorsBuffer] =
+          await Promise.all([
+            download('original'),
+            download('source.txt'),
+            download('manifest.json'),
+            download('vectors.bin'),
+          ]);
+
+        const artifact = await this.vectorStore.restoreKnowledgeFile({
+          chatbotId: file.chatbotId,
+          fileId: file.id,
+          fileName: file.name,
+          buffer,
+          text: textBuffer.toString('utf8'),
+          manifestBuffer,
+          vectorsBuffer,
+        });
+
+        await this.knowledgeFileRepository.updateById(file.id, {
+          directory: artifact.directory,
+          originalPath: artifact.originalPath,
+          textPath: artifact.textPath,
+          manifestPath: artifact.manifestPath,
+          vectorsPath: artifact.vectorsPath,
+        });
+
+        rebuildChatbots.add(file.chatbotId);
+        restored += 1;
+      } catch (error) {
+        failed += 1;
+        this.log(
+          `knowledge restore failed for ${file.chatbotId}/${file.id}: ${error.message}`,
+        );
+      }
+    }
+
+    for (const chatbotId of rebuildChatbots) {
+      try {
+        const chatbotFiles =
+          await this.knowledgeFileRepository.listByChatbot(chatbotId);
+        const ready = chatbotFiles.filter((file) =>
+          this.hasLocalArtifacts(file),
+        );
+        if (ready.length) await this.vectorStore.rebuildIndex(chatbotId, ready);
+      } catch (error) {
+        this.log(`index rebuild failed for ${chatbotId}: ${error.message}`);
+      }
+    }
+
+    if (restored || failed) {
+      this.log(`knowledge restore: ${restored} restored, ${failed} failed`);
+    }
+    return { restored, failed };
+  }
+
+  async search(chatbotId, query, limit = 5, queryVector = null) {
+    return this.vectorStore.search(chatbotId, query, limit, queryVector);
   }
 }
 

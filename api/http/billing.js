@@ -12,6 +12,7 @@ module.exports = ({ services }) => [
         type: 'object',
         properties: {
           chatbotId: { type: 'string' },
+          ownerUid: { type: 'string' },
         },
       },
     },
