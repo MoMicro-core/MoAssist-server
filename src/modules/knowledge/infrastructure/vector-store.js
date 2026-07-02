@@ -126,6 +126,29 @@ class VectorStore {
     };
   }
 
+  // Conventional artifact locations for a knowledge file on THIS machine.
+  // DB records store absolute paths from whichever machine wrote them, so
+  // cross-machine code (boot sync) must resolve paths by convention instead.
+  artifactPaths(chatbotId, fileId, fileName = '') {
+    const chatbotDirectory = path.join(
+      this.baseDirectory,
+      'chatbots',
+      chatbotId,
+    );
+    const directory = path.join(chatbotDirectory, 'knowledge', fileId);
+    return {
+      directory,
+      originalPath: path.join(
+        chatbotDirectory,
+        'uploads',
+        `${fileId}-${sanitizeFileName(fileName || 'file')}`,
+      ),
+      textPath: path.join(directory, 'source.txt'),
+      manifestPath: path.join(directory, 'manifest.json'),
+      vectorsPath: path.join(directory, 'vectors.bin'),
+    };
+  }
+
   // Rewrites a knowledge file's local artifacts from backed-up buffers (no
   // re-chunking, no re-embedding) — used by the boot-time restore.
   async restoreKnowledgeFile({
@@ -150,12 +173,14 @@ class VectorStore {
     const manifestPath = path.join(directory, 'manifest.json');
     const vectorsPath = path.join(directory, 'vectors.bin');
 
-    await Promise.all([
-      fs.writeFile(originalPath, buffer),
+    const writes = [
       fs.writeFile(textPath, text, 'utf8'),
       fs.writeFile(manifestPath, manifestBuffer),
       fs.writeFile(vectorsPath, vectorsBuffer),
-    ]);
+    ];
+    // The original document backup is best-effort; RAG works without it.
+    if (buffer) writes.push(fs.writeFile(originalPath, buffer));
+    await Promise.all(writes);
 
     let chunksCount = 0;
     try {

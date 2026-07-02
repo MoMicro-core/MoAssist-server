@@ -98,15 +98,15 @@ class RealtimeService {
     this.secretBox = secretBox;
     this.config = config;
     this.log = log;
-    const merchantsDirectory = config.merchantsDirectory || 'files/merchants';
-    this.merchantsDirectory = path.isAbsolute(merchantsDirectory)
-      ? merchantsDirectory
-      : path.join(process.cwd(), merchantsDirectory);
+    const connectorsDirectory = config.connectorsDirectory || 'connectors';
+    this.connectorsDirectory = path.isAbsolute(connectorsDirectory)
+      ? connectorsDirectory
+      : path.join(process.cwd(), connectorsDirectory);
     this.sourceCache = new Map();
   }
 
   localSourcePath(chatbotId) {
-    return path.join(this.merchantsDirectory, `${chatbotId}.js`);
+    return path.join(this.connectorsDirectory, `${chatbotId}.js`);
   }
 
   storageObjectPath(chatbotId) {
@@ -120,9 +120,9 @@ class RealtimeService {
   }
 
   async writeLocalSource(chatbotId, source) {
-    await fs.mkdir(this.merchantsDirectory, { recursive: true });
+    await fs.mkdir(this.connectorsDirectory, { recursive: true });
     const target = this.localSourcePath(chatbotId);
-    const temporary = path.join(this.merchantsDirectory, `.tmp-${chatbotId}`);
+    const temporary = path.join(this.connectorsDirectory, `.tmp-${chatbotId}`);
     await fs.writeFile(temporary, source, 'utf8');
     await fs.rename(temporary, target);
   }
@@ -254,9 +254,14 @@ class RealtimeService {
     const source = String(payload.source || '').trim();
     if (!source) throw new BadRequestError('Connector source is required');
 
+    const existing = await this.connectorRepository.findByChatbotId(chatbotId);
     const version = hashSource(source);
     const storagePath = this.storageObjectPath(chatbotId);
-    const intents = normalizeIntents(payload.intents);
+    // Omitting intents keeps the stored catalog (and its cached vectors).
+    const intents =
+      payload.intents === undefined
+        ? normalizeIntents(existing?.intents)
+        : normalizeIntents(payload.intents);
 
     if (this.connectorStorage?.isConfigured?.()) {
       await this.connectorStorage.uploadObject({
@@ -266,8 +271,6 @@ class RealtimeService {
         mimeType: 'text/javascript',
       });
     }
-
-    const existing = await this.connectorRepository.findByChatbotId(chatbotId);
     const update = {
       chatbotId,
       ownerUid: chatbot.ownerUid,

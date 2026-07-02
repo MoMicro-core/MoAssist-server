@@ -43,11 +43,22 @@ export class VectorStore {
     embeddings: number[][];
     mimeType: string;
   }): Promise<KnowledgeFileArtifact>;
+  artifactPaths(
+    chatbotId: string,
+    fileId: string,
+    fileName?: string,
+  ): {
+    directory: string;
+    originalPath: string;
+    textPath: string;
+    manifestPath: string;
+    vectorsPath: string;
+  };
   restoreKnowledgeFile(args: {
     chatbotId: string;
     fileId: string;
     fileName: string;
-    buffer: Buffer;
+    buffer?: Buffer | null;
     text: string;
     manifestBuffer: Buffer;
     vectorsBuffer: Buffer;

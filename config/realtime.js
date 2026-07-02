@@ -10,7 +10,7 @@ const toInteger = (value, fallback) => {
 module.exports = {
   // 32-byte key (hex or base64) for encrypting connector secrets at rest.
   secretsKey: process.env.CONNECTOR_SECRETS_KEY || '',
-  merchantsDirectory: 'files/merchants',
+  connectorsDirectory: 'connectors',
   workerCount: toInteger(process.env.CONNECTOR_WORKERS, 2),
   workerMaxOldGenerationSizeMb: 128,
   workerQueueLimit: 16,

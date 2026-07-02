@@ -55,7 +55,7 @@ export class RealtimeService {
     log?: (line: string) => void;
   });
 
-  merchantsDirectory: string;
+  connectorsDirectory: string;
 
   syncAllOnBoot(): Promise<{ synced: number; failed: number }>;
   getConnector(

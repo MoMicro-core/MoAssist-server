@@ -150,7 +150,12 @@ describe('knowledge backup and restore', () => {
     const freshService = createService(baseDirectory, storage, repositories);
 
     const outcome = await freshService.restoreMissingArtifacts();
-    expect(outcome).toEqual({ restored: 1, failed: 0 });
+    expect(outcome).toEqual({
+      restored: 1,
+      backedUp: 0,
+      pending: 0,
+      failed: 0,
+    });
 
     const record = [...repositories.records.values()][0];
     expect(existsSync(record.originalPath)).toBe(true);
@@ -173,8 +178,114 @@ describe('knowledge backup and restore', () => {
 
     const downloads = jest.spyOn(storage, 'downloadObject');
     const outcome = await service.restoreMissingArtifacts();
-    expect(outcome).toEqual({ restored: 0, failed: 0 });
+    expect(outcome).toEqual({
+      restored: 0,
+      backedUp: 0,
+      pending: 0,
+      failed: 0,
+    });
     expect(downloads).not.toHaveBeenCalled();
+  });
+
+  it('backfills local files uploaded before backups existed', async () => {
+    const storage = createFakeStorage();
+    const repositories = createFakeRepositories();
+    const service = createService(baseDirectory, storage, repositories);
+    const [created] = await upload(service);
+
+    // Simulate a pre-backup record: bucket empty, no backedUpAt marker.
+    storage.objects.clear();
+    repositories.records.set(created.id, {
+      ...repositories.records.get(created.id),
+      backedUpAt: null,
+    });
+
+    const outcome = await service.restoreMissingArtifacts();
+    expect(outcome).toEqual({
+      restored: 0,
+      backedUp: 1,
+      pending: 0,
+      failed: 0,
+    });
+
+    const base = `chatbot-knowledge/chatbots/bot-1/knowledge/${created.id}`;
+    expect(storage.objects.has(`${base}/source.txt`)).toBe(true);
+    expect(storage.objects.has(`${base}/manifest.json`)).toBe(true);
+    expect(storage.objects.has(`${base}/vectors.bin`)).toBe(true);
+    expect(repositories.records.get(created.id).backedUpAt).toBeInstanceOf(
+      Date,
+    );
+
+    // Second boot: nothing left to do.
+    const second = await service.restoreMissingArtifacts();
+    expect(second).toEqual({
+      restored: 0,
+      backedUp: 0,
+      pending: 0,
+      failed: 0,
+    });
+  });
+
+  it('backfills by convention even when the record paths belong to another machine', async () => {
+    const storage = createFakeStorage();
+    const repositories = createFakeRepositories();
+    const service = createService(baseDirectory, storage, repositories);
+    const [created] = await upload(service);
+
+    // Shared-DB scenario: the record was written by a server with a
+    // different filesystem layout, but the artifacts exist here.
+    storage.objects.clear();
+    repositories.records.set(created.id, {
+      ...repositories.records.get(created.id),
+      backedUpAt: null,
+      directory: '/home/ubuntu/app/files/chatbots/bot-1/knowledge/x',
+      originalPath: '/home/ubuntu/app/files/chatbots/bot-1/uploads/x',
+      textPath: '/home/ubuntu/app/files/chatbots/bot-1/knowledge/x/source.txt',
+      manifestPath:
+        '/home/ubuntu/app/files/chatbots/bot-1/knowledge/x/manifest.json',
+      vectorsPath:
+        '/home/ubuntu/app/files/chatbots/bot-1/knowledge/x/vectors.bin',
+    });
+
+    const outcome = await service.restoreMissingArtifacts();
+    expect(outcome).toEqual({
+      restored: 0,
+      backedUp: 1,
+      pending: 0,
+      failed: 0,
+    });
+
+    // The record now points at this machine's real files.
+    const record = repositories.records.get(created.id);
+    expect(existsSync(record.textPath)).toBe(true);
+    expect(existsSync(record.vectorsPath)).toBe(true);
+  });
+
+  it('marks files with no local copy and no backup as pending, not failed', async () => {
+    const storage = createFakeStorage();
+    const repositories = createFakeRepositories();
+    repositories.records.set('remote-file', {
+      id: 'remote-file',
+      chatbotId: 'bot-1',
+      ownerUid: 'owner-1',
+      name: 'remote.pdf',
+      mimeType: 'application/pdf',
+      backedUpAt: null,
+      directory: '/home/ubuntu/app/files/chatbots/bot-1/knowledge/remote-file',
+      originalPath: '/home/ubuntu/app/x',
+      textPath: '/home/ubuntu/app/y',
+      manifestPath: '/home/ubuntu/app/z',
+      vectorsPath: '/home/ubuntu/app/w',
+    });
+    const service = createService(baseDirectory, storage, repositories);
+
+    const outcome = await service.restoreMissingArtifacts();
+    expect(outcome).toEqual({
+      restored: 0,
+      backedUp: 0,
+      pending: 1,
+      failed: 0,
+    });
   });
 
   it('removes the backup objects when the file is deleted', async () => {

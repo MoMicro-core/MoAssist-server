@@ -147,3 +147,6 @@ dist
 
 
 .DS_Store
+
+# Connectors synced from Supabase at runtime
+/connectors/*.js

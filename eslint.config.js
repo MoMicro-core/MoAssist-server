@@ -41,7 +41,8 @@ module.exports = [
     },
   },
   {
-    // files/** is runtime data (synced connectors, knowledge artifacts).
-    ignores: ['static/**', 'node_modules/**', 'files/**'],
+    // files/** and connectors/*.js are runtime data (knowledge artifacts and
+    // connectors synced from Supabase).
+    ignores: ['static/**', 'node_modules/**', 'files/**', 'connectors/*.js'],
   },
 ];

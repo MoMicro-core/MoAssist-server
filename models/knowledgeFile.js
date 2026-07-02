@@ -19,6 +19,7 @@ module.exports = {
     textPath: { type: String, required: true },
     manifestPath: { type: String, required: true },
     vectorsPath: { type: String, required: true },
+    backedUpAt: { type: Date, default: null },
   },
   params: { timestamps: true },
   indexes: [[{ chatbotId: 1, updatedAt: -1 }]],

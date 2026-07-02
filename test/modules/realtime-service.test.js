@@ -355,7 +355,7 @@ describe('RealtimeService', () => {
 
     it('hashes, embeds intents, persists, and writes the local file', async () => {
       const { service, records } = buildHarness({ record: null });
-      service.merchantsDirectory = scratch;
+      service.connectorsDirectory = scratch;
 
       const status = await service.setConnector(
         { uid: 'admin-1', role: 'admin' },

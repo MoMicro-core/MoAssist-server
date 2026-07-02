@@ -28,7 +28,7 @@ async function initFastify() {
   const services = await createServices(fastify);
   fastify.decorate('services', services);
 
-  // Mirror enabled connectors from Supabase into files/merchants/ and pull
+  // Mirror enabled connectors from Supabase into connectors/ and pull
   // back any knowledge artifacts missing from files/chatbots/ (fresh server)
   // so RAG works without re-uploading. Never blocks or fails boot.
   queueMicrotask(() => {

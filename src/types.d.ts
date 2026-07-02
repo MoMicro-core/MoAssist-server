@@ -325,7 +325,7 @@ export interface RealtimeLiveContext {
 
 export interface RealtimeConfig {
   secretsKey: string;
-  merchantsDirectory: string;
+  connectorsDirectory: string;
   connectorsBucket?: string;
   workerCount: number;
   workerMaxOldGenerationSizeMb: number;
@@ -354,6 +354,7 @@ export interface KnowledgeFile {
   textPath: string;
   manifestPath: string;
   vectorsPath: string;
+  backedUpAt?: Date | null;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -630,4 +631,5 @@ export interface KnowledgeFileCreateInput {
   textPath: string;
   manifestPath: string;
   vectorsPath: string;
+  backedUpAt?: Date | null;
 }

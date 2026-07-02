@@ -44,7 +44,12 @@ export class KnowledgeService {
     log?: (line: string) => void;
   });
 
-  restoreMissingArtifacts(): Promise<{ restored: number; failed: number }>;
+  restoreMissingArtifacts(): Promise<{
+    restored: number;
+    backedUp: number;
+    pending: number;
+    failed: number;
+  }>;
 
   list(actor: Actor, chatbotId: string): Promise<KnowledgeFile[]>;
   upload(
