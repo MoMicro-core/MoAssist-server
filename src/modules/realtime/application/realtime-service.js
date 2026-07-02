@@ -105,6 +105,13 @@ class RealtimeService {
     this.sourceCache = new Map();
   }
 
+  // Per-message diagnostics; enable with CONNECTOR_DEBUG=1. Skip reasons are
+  // silent by design (a missing token is normal), so this is the only way to
+  // see why the connector did not contribute to a reply.
+  trace(line) {
+    if (this.config.debug) this.log(`realtime: ${line}`);
+  }
+
   localSourcePath(chatbotId) {
     return path.join(this.connectorsDirectory, `${chatbotId}.js`);
   }
@@ -335,11 +342,27 @@ class RealtimeService {
   }
 
   async getActiveConnector(chatbot) {
-    if (!chatbot || !this.hasRealtimeTier(chatbot)) return null;
+    if (!chatbot) return null;
+    if (!this.hasRealtimeTier(chatbot)) {
+      this.trace(
+        `chatbot ${chatbot.id}: tier "${chatbot.premiumPlan}" (${chatbot.premiumStatus}) has no realtime_data capability`,
+      );
+      return null;
+    }
     const record = await this.connectorRepository.findByChatbotId(chatbot.id);
-    if (!record || record.enabled !== true) return null;
+    if (!record) {
+      this.trace(`chatbot ${chatbot.id}: no connector record`);
+      return null;
+    }
+    if (record.enabled !== true) {
+      this.trace(`chatbot ${chatbot.id}: connector disabled`);
+      return null;
+    }
     const source = await this.loadSource(record);
-    if (!source) return null;
+    if (!source) {
+      this.trace(`chatbot ${chatbot.id}: connector source unavailable`);
+      return null;
+    }
     return { record, source };
   }
 
@@ -353,19 +376,45 @@ class RealtimeService {
 
   // Entry point for widget auth flows that only know the chatbot id.
   async verifyForWidget({ chatbotId, widgetToken, token }) {
-    if (!String(token || '').trim()) return null;
+    const normalized = String(token || '').trim();
+    this.trace(
+      `verify requested for chatbot ${chatbotId} (token ${
+        normalized ? `present, ${normalized.length} chars` : 'MISSING'
+      })`,
+    );
+    if (!normalized) return null;
     const chatbot = await this.chatbotRepository.findById(chatbotId);
-    if (!chatbot) return null;
-    return this.verifyIdentity({ chatbot, widgetToken, token });
+    if (!chatbot) {
+      this.trace(`verify aborted: chatbot ${chatbotId} not found`);
+      return null;
+    }
+    return this.verifyIdentity({ chatbot, widgetToken, token: normalized });
   }
 
   buildRunConnector(record, source, cacheScope) {
+    let baseUrl = record.baseUrl || '';
+    const recordHosts = record.allowedHosts || [];
+    const allowedHosts = [...recordHosts];
+
+    // Dev-only redirect: point connector calls at a local/staging origin
+    // without changing the record shared with production.
+    const override = String(this.config.baseUrlOverride || '').trim();
+    if (override) {
+      baseUrl = override;
+      try {
+        allowedHosts.push(new URL(override).hostname.toLowerCase());
+      } catch {
+        // Invalid override URL; the request itself will fail loudly.
+      }
+      this.trace(`using base URL override ${override}`);
+    }
+
     return {
       chatbotId: record.chatbotId,
       version: record.version,
       source,
-      baseUrl: record.baseUrl || '',
-      allowedHosts: record.allowedHosts || [],
+      baseUrl,
+      allowedHosts,
       secrets: this.secretBox.decrypt(record.secrets) || {},
       intents: normalizeIntents(record.intents),
       cacheScope,
@@ -417,8 +466,12 @@ class RealtimeService {
       }
 
       const user = sanitizeVerifiedUser(outcome.result);
-      if (!user) return null;
+      if (!user) {
+        this.log(`connector ${chatbot.id}: verify returned no usable identity`);
+        return null;
+      }
 
+      this.log(`connector ${chatbot.id}: identity verified (user ${user.id})`);
       await this.widgetSessionRepository.updateByToken(widgetToken, {
         $set: {
           realtimeUser: user,
@@ -458,15 +511,25 @@ class RealtimeService {
   async fetchLiveContext({ chatbot, conversation, prompt, embedding }) {
     try {
       const widgetToken = conversation?.widgetSessionToken;
-      if (!widgetToken) return null;
+      if (!widgetToken) {
+        this.trace('skip: conversation has no widget session token');
+        return null;
+      }
 
       const active = await this.getActiveConnector(chatbot);
       if (!active) return null;
 
       const session =
         await this.widgetSessionRepository.findByToken(widgetToken);
-      if (!session?.realtimeUser) return null;
+      if (!session?.realtimeUser) {
+        this.trace(
+          `chatbot ${chatbot.id}: skip, no verified identity on the widget ` +
+            'session (was a realtimeToken passed to the widget?)',
+        );
+        return null;
+      }
       if (!isFresh(session.realtimeVerifiedAt, this.identityTtlMs())) {
+        this.trace(`chatbot ${chatbot.id}: skip, verified identity expired`);
         return null;
       }
 
@@ -474,6 +537,11 @@ class RealtimeService {
         threshold: active.record.routerThreshold,
         margin: active.record.routerMargin,
       });
+      this.trace(
+        route
+          ? `chatbot ${chatbot.id}: routed to "${route.name}" (score ${route.score.toFixed(3)})`
+          : `chatbot ${chatbot.id}: no intent matched (${active.record.intentVectors?.length || 0} intent vectors)`,
+      );
       const routeIntent = route
         ? normalizeIntents(active.record.intents).find(
             (intent) => intent.name === route.name,
@@ -501,7 +569,14 @@ class RealtimeService {
         },
         timeoutMs: this.config.fetchTimeoutMs || 2500,
       });
-      if (!outcome.ok || outcome.result === null) return null;
+      if (!outcome.ok) {
+        this.trace(`chatbot ${chatbot.id}: fetch failed (${outcome.error})`);
+        return null;
+      }
+      if (outcome.result === null) {
+        this.trace(`chatbot ${chatbot.id}: connector returned no live data`);
+        return null;
+      }
 
       const text =
         typeof outcome.result === 'string'
@@ -510,6 +585,9 @@ class RealtimeService {
       const trimmed = text.trim();
       if (!trimmed) return null;
 
+      this.trace(
+        `chatbot ${chatbot.id}: injecting ${trimmed.length} chars of live data`,
+      );
       return {
         text: trimmed.slice(0, this.config.maxContextChars || 4000),
         asOf: new Date(),

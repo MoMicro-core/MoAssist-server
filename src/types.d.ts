@@ -325,6 +325,9 @@ export interface RealtimeLiveContext {
 
 export interface RealtimeConfig {
   secretsKey: string;
+  debug: boolean;
+  baseUrlOverride: string;
+  allowPrivateHosts: boolean;
   connectorsDirectory: string;
   connectorsBucket?: string;
   workerCount: number;

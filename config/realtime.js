@@ -10,6 +10,14 @@ const toInteger = (value, fallback) => {
 module.exports = {
   // 32-byte key (hex or base64) for encrypting connector secrets at rest.
   secretsKey: process.env.CONNECTOR_SECRETS_KEY || '',
+  // CONNECTOR_DEBUG=1 logs every skip/route decision on the message path.
+  debug: process.env.CONNECTOR_DEBUG === '1',
+  // Dev-only: redirect all connector HTTP calls to this origin instead of
+  // the baseUrl stored in the connector record (e.g. http://localhost:8080
+  // while production is the stored value). Requires the private-host
+  // exception below for localhost. Never set these in production.
+  baseUrlOverride: process.env.CONNECTOR_BASE_URL_OVERRIDE || '',
+  allowPrivateHosts: process.env.CONNECTOR_ALLOW_PRIVATE_HOSTS === '1',
   connectorsDirectory: 'connectors',
   workerCount: toInteger(process.env.CONNECTOR_WORKERS, 2),
   workerMaxOldGenerationSizeMb: 128,

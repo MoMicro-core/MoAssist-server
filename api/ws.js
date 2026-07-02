@@ -38,6 +38,10 @@ module.exports = ({ services, fastify }) => ({
             token: payload.realtimeToken,
           })
           .catch(() => null);
+      } else {
+        services.realtimeService.trace(
+          `widget.authenticate for chatbot ${conversation.chatbotId}: no realtimeToken in payload`,
+        );
       }
 
       return {

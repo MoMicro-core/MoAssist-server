@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Connector test — MoMicro Assist</title>
+    <style>
+      body {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        max-width: 640px;
+        margin: 40px auto;
+        padding: 0 16px;
+        color: #1f2937;
+      }
+      label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        margin: 14px 0 4px;
+      }
+      input {
+        width: 100%;
+        padding: 8px 10px;
+        font-size: 14px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        box-sizing: border-box;
+      }
+      button {
+        margin-top: 16px;
+        padding: 9px 16px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #fff;
+        background: #0284c7;
+        border: 0;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      p.hint {
+        font-size: 13px;
+        color: #6b7280;
+      }
+      #status {
+        margin-top: 12px;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Real-time connector test</h1>
+    <p class="hint">
+      Loads the widget launcher with a <code>realtimeToken</code>, exactly like
+      a merchant page would. Get your session token from the dashboard tab:
+      DevTools console →
+      <code>localStorage.getItem('momicro-assist-session')</code>. Watch the
+      server logs for <code>verifyIdentity</code> lines after loading.
+    </p>
+
+    <label for="chatbotId">Chatbot ID</label>
+    <input id="chatbotId" placeholder="f5a65979-…" autocomplete="off" />
+
+    <label for="token">realtimeToken (your dashboard session token)</label>
+    <input id="token" placeholder="paste the session token" autocomplete="off" />
+
+    <button id="load" type="button">Load widget with token</button>
+    <button id="reset" type="button" style="background: #6b7280">
+      Clear widget session
+    </button>
+    <div id="status"></div>
+
+    <script>
+      const statusNode = document.getElementById('status');
+
+      document.getElementById('load').addEventListener('click', () => {
+        const chatbotId = document.getElementById('chatbotId').value.trim();
+        const token = document.getElementById('token').value.trim();
+        if (!chatbotId || !token) {
+          statusNode.textContent = 'Enter both the chatbot id and the token.';
+          return;
+        }
+
+        const existing = document.getElementById('momicro-assist-' + chatbotId);
+        if (existing) existing.remove();
+
+        window.MOMICRO_ASSIST_CONFIG = { realtimeToken: token };
+        const script = document.createElement('script');
+        // Cache-busted so a stale launcher can never be served.
+        script.src =
+          window.location.origin +
+          '/chat/script/' +
+          encodeURIComponent(chatbotId) +
+          '?v=' +
+          Date.now();
+        script.setAttribute('data-realtime-token', token);
+        document.body.appendChild(script);
+        statusNode.textContent =
+          'Widget loading… open it and send: "how many chatbots do i have"';
+      });
+
+      document.getElementById('reset').addEventListener('click', () => {
+        const chatbotId = document.getElementById('chatbotId').value.trim();
+        if (!chatbotId) {
+          statusNode.textContent = 'Enter the chatbot id first.';
+          return;
+        }
+        localStorage.removeItem('momicro-assist-widget:' + chatbotId);
+        const existing = document.getElementById('momicro-assist-' + chatbotId);
+        if (existing) existing.remove();
+        statusNode.textContent =
+          'Widget session cleared — load again for a fresh session.';
+      });
+    </script>
+  </body>
+</html>

@@ -113,6 +113,10 @@ module.exports = ({ services, fastify }) => [
             token: request.body.realtimeToken,
           })
           .catch(() => null);
+      } else {
+        services.realtimeService.trace(
+          `widget session for chatbot ${request.body.chatbotId}: no realtimeToken in body`,
+        );
       }
 
       return session;
@@ -142,6 +146,9 @@ module.exports = ({ services, fastify }) => [
       );
       const baseUrl = getBaseUrl(request, fastify.config.environment.appUrl);
       reply.type('application/javascript');
+      // The launcher evolves (e.g. realtimeToken support); never let the
+      // browser serve a stale cached copy.
+      reply.header('Cache-Control', 'no-store');
       return services.embedService.renderScript({ chatbot, baseUrl });
     },
   },
@@ -169,6 +176,7 @@ module.exports = ({ services, fastify }) => [
       );
       const baseUrl = getBaseUrl(request, fastify.config.environment.appUrl);
       reply.type('text/html');
+      reply.header('Cache-Control', 'no-store');
       return services.embedService.renderIframe({
         chatbot,
         baseUrl,

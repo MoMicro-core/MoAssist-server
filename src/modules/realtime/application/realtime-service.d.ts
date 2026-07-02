@@ -57,6 +57,7 @@ export class RealtimeService {
 
   connectorsDirectory: string;
 
+  trace(line: string): void;
   syncAllOnBoot(): Promise<{ synced: number; failed: number }>;
   getConnector(
     actor: Actor,

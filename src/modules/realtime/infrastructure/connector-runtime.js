@@ -53,6 +53,7 @@ class ConnectorRuntime {
         cacheScope: connector.cacheScope || 'shared',
         httpTimeoutMs: this.config.httpTimeoutMs || 1500,
         maxResponseBytes: this.config.maxResponseBytes || 256 * 1024,
+        allowPrivateHosts: this.config.allowPrivateHosts === true,
       },
       timeoutMs: timeoutMs || this.config.fetchTimeoutMs || 2500,
     });

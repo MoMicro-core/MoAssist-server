@@ -64,10 +64,17 @@ const findChatbotByTitle = (message, chatbots) => {
   return match || chatbots[0] || null;
 };
 
+const done = (ctx, route, data) => {
+  ctx.log('fetchContext: returning live data for "' + route.name + '"');
+  return data;
+};
+
 // Once per session, with the visitor's own token — never the admin's.
 async function verifyIdentity(token, ctx) {
+  ctx.log('verifyIdentity: checking visitor token via /v1/auth/me');
   const me = await ctx.http('/v1/auth/me', { headers: authHeader(token) });
   if (!me || !me.uid) throw new Error('Invalid session token');
+  ctx.log('verifyIdentity: OK, user ' + me.uid + ' (' + (me.email || '') + ')');
   return {
     id: String(me.uid),
     email: me.email || '',
@@ -78,11 +85,13 @@ async function verifyIdentity(token, ctx) {
 
 // Once per session (plus TTL refresh): the data most questions need.
 async function loadSnapshot(user, ctx) {
+  ctx.log('loadSnapshot: prefetching for user ' + user.id);
   try {
     const [chatbots, subscription] = await Promise.all([
       fetchTrimmedChatbots(ctx, user.id),
       adminGet(ctx, '/v1/subscription?ownerUid=' + encodeURIComponent(user.id)),
     ]);
+    ctx.log('loadSnapshot: OK, ' + chatbots.length + ' chatbots');
     return { chatbots, subscription: trimSubscription(subscription) };
   } catch (error) {
     ctx.log('snapshot failed', error.message);
@@ -93,6 +102,14 @@ async function loadSnapshot(user, ctx) {
 // Per message; the platform router picked `route` from the intent catalog.
 // Returning null means "no live data" and the AI answers from RAG/history.
 async function fetchContext({ message, user, snapshot, route }, ctx) {
+  ctx.log(
+    'fetchContext: route=' +
+      (route && route.name ? route.name : 'none') +
+      ', user=' +
+      (user && user.id ? user.id : 'none') +
+      ', snapshot=' +
+      (snapshot ? 'yes' : 'no'),
+  );
   if (!route || !route.name) return null;
 
   try {
@@ -101,18 +118,18 @@ async function fetchContext({ message, user, snapshot, route }, ctx) {
         snapshot && snapshot.chatbots
           ? snapshot.chatbots
           : await fetchTrimmedChatbots(ctx, user.id);
-      return { chatbots };
+      return done(ctx, route, { chatbots });
     }
 
     if (route.name === 'billing-plan') {
       if (snapshot && snapshot.subscription) {
-        return { subscription: snapshot.subscription };
+        return done(ctx, route, { subscription: snapshot.subscription });
       }
       const summary = await adminGet(
         ctx,
         '/v1/subscription?ownerUid=' + encodeURIComponent(user.id),
       );
-      return { subscription: trimSubscription(summary) };
+      return done(ctx, route, { subscription: trimSubscription(summary) });
     }
 
     if (route.name === 'inbox-unread') {
@@ -125,7 +142,7 @@ async function fetchContext({ message, user, snapshot, route }, ctx) {
       const unread = asArray(conversations).filter(
         (conversation) => (conversation.unreadForOwner || 0) > 0,
       );
-      return {
+      return done(ctx, route, {
         unreadConversations: unread.length,
         conversations: unread.slice(0, MAX_ITEMS).map((conversation) => ({
           chatbotId: conversation.chatbotId,
@@ -137,7 +154,7 @@ async function fetchContext({ message, user, snapshot, route }, ctx) {
           lastMessageAt: conversation.lastMessageAt || null,
           unread: conversation.unreadForOwner || 0,
         })),
-      };
+      });
     }
 
     if (route.name === 'knowledge-files') {
@@ -151,7 +168,7 @@ async function fetchContext({ message, user, snapshot, route }, ctx) {
         ctx,
         '/v1/chatbots/' + encodeURIComponent(target.id) + '/files',
       );
-      return {
+      return done(ctx, route, {
         chatbot: target.title || target.id,
         files: asArray(files)
           .slice(0, MAX_FILES)
@@ -161,7 +178,7 @@ async function fetchContext({ message, user, snapshot, route }, ctx) {
             sizeBytes: file.size,
             chunks: file.chunksCount,
           })),
-      };
+      });
     }
 
     return null;
