@@ -258,6 +258,7 @@ export interface WidgetSession {
   origin: string;
   realtimeUser: RealtimeUser | null;
   realtimeVerifiedAt: Date | null;
+  realtimeTokenHash: string;
   realtimeSnapshot: Record<string, unknown> | null;
   realtimeSnapshotAt: Date | null;
   lastActiveAt: Date;

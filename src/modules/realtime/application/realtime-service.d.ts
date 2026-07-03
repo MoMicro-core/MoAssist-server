@@ -74,6 +74,15 @@ export class RealtimeService {
   ): Promise<{ synced: boolean; version: string }>;
 
   isActive(chatbot: Chatbot): Promise<boolean>;
+  syncForWidget(args: {
+    chatbotId: string;
+    widgetToken: string;
+    token?: string;
+  }): Promise<RealtimeUser | null>;
+  clearForWidget(args: {
+    chatbotId?: string;
+    widgetToken: string;
+  }): Promise<null>;
   verifyForWidget(args: {
     chatbotId: string;
     widgetToken: string;

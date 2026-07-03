@@ -105,19 +105,14 @@ module.exports = ({ services, fastify }) => [
           locale,
         });
 
-      if (request.body.realtimeToken) {
-        services.realtimeService
-          .verifyForWidget({
-            chatbotId: request.body.chatbotId,
-            widgetToken: session.token,
-            token: request.body.realtimeToken,
-          })
-          .catch(() => null);
-      } else {
-        services.realtimeService.trace(
-          `widget session for chatbot ${request.body.chatbotId}: no realtimeToken in body`,
-        );
-      }
+      // Sync the visitor's auth state: token → verify, no token → clear.
+      services.realtimeService
+        .syncForWidget({
+          chatbotId: request.body.chatbotId,
+          widgetToken: session.token,
+          token: request.body.realtimeToken || '',
+        })
+        .catch(() => null);
 
       return session;
     },

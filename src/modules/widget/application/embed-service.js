@@ -146,10 +146,12 @@ class EmbedService {
   // either data-realtime-token on the script tag or
   // window.MOMICRO_ASSIST_CONFIG = { realtimeToken: '...' }.
   var hostConfig = window.MOMICRO_ASSIST_CONFIG || {};
+  var hostEntry = hostConfig[chatbotId] || {};
   var scriptTag = document.currentScript;
   var realtimeToken =
     (scriptTag && scriptTag.getAttribute('data-realtime-token')) ||
     hostConfig.realtimeToken ||
+    hostEntry.realtimeToken ||
     '';
   if (realtimeToken) {
     iframeSrc += '&realtimeToken=' + encodeURIComponent(realtimeToken);
@@ -270,6 +272,21 @@ class EmbedService {
   wrapper.appendChild(button);
   wrapper.appendChild(panel);
   document.body.appendChild(wrapper);
+
+  // SPA hook: report a login/logout without a page reload. Pass the signed-in
+  // customer's token, or an empty value on logout.
+  //   window.MoMicroAssist.setRealtimeToken('<token>');
+  //   window.MoMicroAssist.setRealtimeToken('');
+  window.MoMicroAssist = window.MoMicroAssist || {};
+  window.MoMicroAssist.setRealtimeToken = function (token) {
+    if (!iframe.contentWindow) return;
+    iframe.contentWindow.postMessage({
+      type: 'momicro-assist',
+      chatbotId: chatbotId,
+      action: 'realtime-token',
+      token: token || ''
+    }, '*');
+  };
 }());
 `.trim();
   }
@@ -1089,7 +1106,7 @@ class EmbedService {
         new URLSearchParams(window.location.search).get('inputHeight') || '',
         10,
       );
-      const realtimeToken =
+      let realtimeToken =
         new URLSearchParams(window.location.search).get('realtimeToken') || '';
       const configuredInputHeight = Number.parseInt(
         runtime.chatbot.settings.inputHeight || '',
@@ -1609,7 +1626,9 @@ class EmbedService {
             action: 'widget.authenticate',
             payload: {
               token: widgetToken,
-              realtimeToken: realtimeToken || undefined
+              // Always sent: a value verifies the visitor, an empty string
+              // tells the server the visitor is logged out (clears identity).
+              realtimeToken: realtimeToken || ''
             }
           }));
         });
@@ -1710,6 +1729,25 @@ class EmbedService {
 
         if (data.action === 'hide') {
           setWidgetHidden(true);
+          return;
+        }
+
+        // Host page reports a login/logout without a reload (SPA): adopt the
+        // new token and re-run the auth handshake so the server verifies the
+        // new identity or clears the old one.
+        if (data.action === 'realtime-token') {
+          realtimeToken = String(data.token || '');
+          if (socket && socket.readyState === WebSocket.OPEN && widgetToken) {
+            socket.send(JSON.stringify({
+              action: 'widget.authenticate',
+              payload: {
+                token: widgetToken,
+                realtimeToken: realtimeToken || ''
+              }
+            }));
+          } else if (widgetToken) {
+            connectSocket();
+          }
         }
       });
 
@@ -1734,7 +1772,7 @@ class EmbedService {
             token: widgetToken,
             visitor,
             language: runtime.chatbot.settings.defaultLanguage || 'english',
-            realtimeToken: realtimeToken || undefined
+            realtimeToken: realtimeToken || ''
           })
         });
         const payload = await response.json();

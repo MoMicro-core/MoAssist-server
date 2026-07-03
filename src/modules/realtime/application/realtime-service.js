@@ -23,6 +23,9 @@ const MAX_USER_CHARS = 2048;
 const hashSource = (source) =>
   crypto.createHash('sha256').update(source, 'utf8').digest('hex');
 
+const hashToken = (token) =>
+  crypto.createHash('sha256').update(String(token), 'utf8').digest('hex');
+
 const isFresh = (value, maxAgeMs) => {
   if (!value) return false;
   const time = new Date(value).getTime();
@@ -374,6 +377,43 @@ class RealtimeService {
     }
   }
 
+  // The visitor logged out: forget the verified identity and snapshot so
+  // live account data stops immediately.
+  async clearForWidget({ chatbotId, widgetToken }) {
+    try {
+      if (!widgetToken) return null;
+      const session =
+        await this.widgetSessionRepository.findByToken(widgetToken);
+      if (!session?.realtimeUser) return null;
+
+      await this.widgetSessionRepository.updateByToken(widgetToken, {
+        $set: {
+          realtimeUser: null,
+          realtimeVerifiedAt: null,
+          realtimeTokenHash: '',
+          realtimeSnapshot: null,
+          realtimeSnapshotAt: null,
+        },
+      });
+      this.log(
+        `connector ${chatbotId || session.chatbotId}: identity cleared (visitor logged out)`,
+      );
+      return null;
+    } catch (error) {
+      this.log(`connector identity clear error: ${error.message}`);
+      return null;
+    }
+  }
+
+  // Widget auth handshake: the widget reports its CURRENT auth state on
+  // every connect. A token verifies (or re-verifies after an account
+  // switch); an absent token clears any stored identity (logout).
+  async syncForWidget({ chatbotId, widgetToken, token }) {
+    const normalized = String(token || '').trim();
+    if (!normalized) return this.clearForWidget({ chatbotId, widgetToken });
+    return this.verifyForWidget({ chatbotId, widgetToken, token: normalized });
+  }
+
   // Entry point for widget auth flows that only know the chatbot id.
   async verifyForWidget({ chatbotId, widgetToken, token }) {
     const normalized = String(token || '').trim();
@@ -442,11 +482,21 @@ class RealtimeService {
       const session =
         await this.widgetSessionRepository.findByToken(widgetToken);
       if (!session || session.chatbotId !== chatbot.id) return null;
+
+      // Same token, fresh identity → nothing to do. A different token means
+      // the visitor logged in as someone else: re-verify before trusting.
+      const tokenHash = hashToken(normalizedToken);
       if (
         session.realtimeUser &&
-        isFresh(session.realtimeVerifiedAt, this.identityTtlMs())
+        isFresh(session.realtimeVerifiedAt, this.identityTtlMs()) &&
+        session.realtimeTokenHash === tokenHash
       ) {
         return session.realtimeUser;
+      }
+      if (session.realtimeUser && session.realtimeTokenHash !== tokenHash) {
+        this.trace(
+          `chatbot ${chatbot.id}: auth token changed, re-verifying identity`,
+        );
       }
 
       const connector = this.buildRunConnector(
@@ -476,6 +526,7 @@ class RealtimeService {
         $set: {
           realtimeUser: user,
           realtimeVerifiedAt: new Date(),
+          realtimeTokenHash: tokenHash,
           realtimeSnapshot: null,
           realtimeSnapshotAt: null,
         },

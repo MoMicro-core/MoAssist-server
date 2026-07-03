@@ -1,4 +1,4 @@
-# name: Deploy API to Lightsail
+name: Deploy API to Lightsail
 #
 # on:
 #   push:

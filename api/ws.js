@@ -28,21 +28,16 @@ module.exports = ({ services, fastify }) => ({
       fastify.client.authenticateWidget(connection, widgetSession);
       fastify.client.subscribe(connection, `conversation:${conversation.id}`);
 
-      // Verify the merchant auth token once, in the background; identity is
-      // stored server-side and never re-read from later messages.
-      if (payload.realtimeToken) {
-        services.realtimeService
-          .verifyForWidget({
-            chatbotId: conversation.chatbotId,
-            widgetToken: payload.token,
-            token: payload.realtimeToken,
-          })
-          .catch(() => null);
-      } else {
-        services.realtimeService.trace(
-          `widget.authenticate for chatbot ${conversation.chatbotId}: no realtimeToken in payload`,
-        );
-      }
+      // Sync the visitor's auth state in the background: a token verifies
+      // the identity once (or re-verifies after an account switch), no token
+      // clears it (logout). Chat messages never carry identity.
+      services.realtimeService
+        .syncForWidget({
+          chatbotId: conversation.chatbotId,
+          widgetToken: payload.token,
+          token: payload.realtimeToken || '',
+        })
+        .catch(() => null);
 
       return {
         event: 'authenticated',

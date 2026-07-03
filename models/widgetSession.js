@@ -11,6 +11,9 @@ module.exports = {
     origin: { type: String, default: '' },
     realtimeUser: { type: Object, default: null },
     realtimeVerifiedAt: { type: Date, default: null },
+    // sha256 of the verified auth token: detects login-as-another-user
+    // without re-verifying the same token on every widget connect.
+    realtimeTokenHash: { type: String, default: '' },
     realtimeSnapshot: { type: Object, default: null },
     realtimeSnapshotAt: { type: Date, default: null },
     lastActiveAt: { type: Date, required: true },

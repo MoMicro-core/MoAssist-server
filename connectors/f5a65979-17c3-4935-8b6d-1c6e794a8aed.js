@@ -37,10 +37,10 @@ const trimSubscription = (summary) => ({
     periodEnd: item.premiumCurrentPeriodEnd || null,
     tier: item.currentTier
       ? {
-          id: item.currentTier.id,
-          name: item.currentTier.name,
-          monthlyPriceUsd: item.currentTier.monthlyPriceUsd,
-        }
+        id: item.currentTier.id,
+        name: item.currentTier.name,
+        monthlyPriceUsd: item.currentTier.monthlyPriceUsd,
+      }
       : null,
   })),
 });
@@ -104,11 +104,11 @@ async function loadSnapshot(user, ctx) {
 async function fetchContext({ message, user, snapshot, route }, ctx) {
   ctx.log(
     'fetchContext: route=' +
-      (route && route.name ? route.name : 'none') +
-      ', user=' +
-      (user && user.id ? user.id : 'none') +
-      ', snapshot=' +
-      (snapshot ? 'yes' : 'no'),
+    (route && route.name ? route.name : 'none') +
+    ', user=' +
+    (user && user.id ? user.id : 'none') +
+    ', snapshot=' +
+    (snapshot ? 'yes' : 'no'),
   );
   if (!route || !route.name) return null;
 
@@ -136,8 +136,8 @@ async function fetchContext({ message, user, snapshot, route }, ctx) {
       const conversations = await adminGet(
         ctx,
         '/v1/conversations?ownerUid=' +
-          encodeURIComponent(user.id) +
-          '&status=active',
+        encodeURIComponent(user.id) +
+        '&status=active',
       );
       const unread = asArray(conversations).filter(
         (conversation) => (conversation.unreadForOwner || 0) > 0,

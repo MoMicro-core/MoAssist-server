@@ -173,18 +173,83 @@ describe('RealtimeService', () => {
       await flushAsync();
       expect(sessions.get('wt-1').realtimeSnapshot).toEqual({ orders: [] });
 
-      // Second call reuses the stored identity: verify-once.
+      // Second handshake with the SAME token reuses the stored identity.
       await service.verifyIdentity({
         chatbot: fullChatbot,
         widgetToken: 'wt-1',
-        token: 'another-token-from-a-later-message',
+        token: 'merchant-token',
       });
       const verifyCalls = runtime.calls.filter(
         (call) => call.fn === 'verifyIdentity',
       );
       expect(verifyCalls).toHaveLength(1);
-      // The connector only ever saw the first token.
-      expect(verifyCalls[0].args.token).toBe('merchant-token');
+    });
+
+    it('re-verifies when the visitor logs in as a different user', async () => {
+      const { service, runtime, sessions } = buildHarness({
+        runResults: {
+          verifyIdentity: (call) => ({
+            ok: true,
+            result: { id: call.args.token === 'token-A' ? 'user-A' : 'user-B' },
+          }),
+          loadSnapshot: { ok: true, result: null },
+        },
+      });
+
+      await service.verifyIdentity({
+        chatbot: fullChatbot,
+        widgetToken: 'wt-1',
+        token: 'token-A',
+      });
+      expect(sessions.get('wt-1').realtimeUser.id).toBe('user-A');
+
+      // A different token must never be trusted on the stored identity.
+      await service.verifyIdentity({
+        chatbot: fullChatbot,
+        widgetToken: 'wt-1',
+        token: 'token-B',
+      });
+      expect(sessions.get('wt-1').realtimeUser.id).toBe('user-B');
+
+      const verifyCalls = runtime.calls.filter(
+        (call) => call.fn === 'verifyIdentity',
+      );
+      expect(verifyCalls).toHaveLength(2);
+    });
+
+    it('clears the identity when the visitor logs out', async () => {
+      const { service, runtime, sessions } = buildHarness();
+      Object.assign(sessions.get('wt-1'), {
+        realtimeUser: { id: '42' },
+        realtimeVerifiedAt: new Date(),
+        realtimeTokenHash: 'abc',
+        realtimeSnapshot: { orders: [] },
+        realtimeSnapshotAt: new Date(),
+      });
+
+      await service.syncForWidget({
+        chatbotId: 'bot-1',
+        widgetToken: 'wt-1',
+        token: '',
+      });
+
+      const session = sessions.get('wt-1');
+      expect(session.realtimeUser).toBeNull();
+      expect(session.realtimeVerifiedAt).toBeNull();
+      expect(session.realtimeTokenHash).toBe('');
+      expect(session.realtimeSnapshot).toBeNull();
+      expect(runtime.calls).toHaveLength(0);
+    });
+
+    it('logout clear is a no-op for anonymous sessions', async () => {
+      const { service, runtime, sessions } = buildHarness();
+      await service.syncForWidget({
+        chatbotId: 'bot-1',
+        widgetToken: 'wt-1',
+        token: '',
+      });
+      expect(sessions.get('wt-1').realtimeUser).toBeNull();
+      expect(runtime.calls).toHaveLength(0);
     });
 
     it('returns null and never calls the connector below the realtime tier', async () => {
