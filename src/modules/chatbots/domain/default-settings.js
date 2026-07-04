@@ -2,8 +2,8 @@
 
 const createDefaultChatbotSettings = () => ({
   status: 'draft',
-  title: 'MoMicro Assist Bot',
-  botName: 'MoMicro Assist',
+  title: 'MoMicro Bot',
+  botName: 'MoMicro',
   initialMessage: 'Hi. How can I help you today?',
   inputPlaceholder: 'Write a message...',
   inputHeight: 42,

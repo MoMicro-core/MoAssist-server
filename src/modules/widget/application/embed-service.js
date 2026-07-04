@@ -1969,7 +1969,7 @@ class EmbedService {
   var iframe = document.createElement('iframe');
   iframe.id = 'momicro-assist-dashboard-${chatbotId}';
   iframe.src = iframeSrc;
-  iframe.title = 'MoMicro Assist Dashboard';
+  iframe.title = 'MoMicro Dashboard';
   iframe.style.width = '100%';
   iframe.style.height = height;
   iframe.style.border = '0';
@@ -1995,7 +1995,7 @@ class EmbedService {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MoMicro Assist Dashboard</title>
+  <title>MoMicro Dashboard</title>
   <style>
     :root {
       color-scheme: light;

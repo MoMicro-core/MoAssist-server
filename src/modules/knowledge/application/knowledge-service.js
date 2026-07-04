@@ -319,6 +319,51 @@ class KnowledgeService {
     return trimmed;
   }
 
+  // Last-resort recovery for files uploaded before backups existed: the old
+  // upload path stored only the original document in the assets bucket.
+  // Download it, re-extract, re-embed, rebuild — then back everything up so
+  // this never has to run again for the file.
+  async restoreFromLegacyOriginal(file) {
+    const objectPath = `chatbots/${file.chatbotId}/files/${file.id}-${file.name}`;
+    const buffer = await this.fileStorage.downloadObject({ objectPath });
+    const text = await extractTextFromBuffer({
+      buffer,
+      fileName: file.name,
+      mimeType: file.mimeType,
+    });
+    const split = require('../infrastructure/vector-store').chunkText(text);
+    if (!split.length) {
+      throw new Error('legacy original has no readable text');
+    }
+
+    const embeddings = await this.vectorStore.createEmbeddings(split);
+    const artifact = await this.vectorStore.saveKnowledgeFile({
+      chatbotId: file.chatbotId,
+      fileId: file.id,
+      fileName: file.name,
+      buffer,
+      text,
+      embeddings,
+      mimeType: file.mimeType,
+    });
+    await this.backupArtifacts({
+      chatbotId: file.chatbotId,
+      fileId: file.id,
+      file: { buffer, mimeType: file.mimeType },
+      text,
+      artifact,
+    });
+    await this.knowledgeFileRepository.updateById(file.id, {
+      directory: artifact.directory,
+      originalPath: artifact.originalPath,
+      textPath: artifact.textPath,
+      manifestPath: artifact.manifestPath,
+      vectorsPath: artifact.vectorsPath,
+      chunksCount: artifact.chunksCount,
+      backedUpAt: new Date(),
+    });
+  }
+
   // The original document is not required — RAG runs on text + manifest +
   // vectors, so only those decide whether a file needs restoring. Checked at
   // the conventional locations for this machine, not the stored paths.
@@ -423,16 +468,26 @@ class KnowledgeService {
         rebuildChatbots.add(file.chatbotId);
         restored += 1;
       } catch (error) {
-        // No backup object yet usually means the file lives on another
-        // machine that has not booted with backups enabled — once it does,
-        // its backfill makes this restore succeed on the next start.
+        // No backup object yet: the file was uploaded by a server running
+        // the old code. Try recovering from the original document the old
+        // upload stored in the assets bucket (re-embeds via OpenAI).
         if (/not[ _]?found/i.test(error.message)) {
-          pending += 1;
-          this.log(
-            `knowledge pending for ${file.chatbotId}/${file.id}: no backup ` +
-              'object yet — it syncs after the server holding the file ' +
-              'restarts (backfill), or re-upload the file',
-          );
+          try {
+            await this.restoreFromLegacyOriginal(file);
+            rebuildChatbots.add(file.chatbotId);
+            restored += 1;
+            this.log(
+              `knowledge recovered from the original document for ${file.chatbotId}/${file.id} (re-embedded and backed up)`,
+            );
+          } catch (legacyError) {
+            pending += 1;
+            this.log(
+              `knowledge pending for ${file.chatbotId}/${file.id}: no backup ` +
+                `and no recoverable original (${legacyError.message}) — ` +
+                'it syncs after the server holding the file restarts, or ' +
+                're-upload the file',
+            );
+          }
         } else {
           failed += 1;
           this.log(

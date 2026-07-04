@@ -24,21 +24,23 @@ const chatbot = {
 
 const createFakeStorage = () => {
   const objects = new Map();
+  // No bucket argument means the gateway's default assets bucket.
+  const keyOf = (bucket, objectPath) => `${bucket || 'assets'}/${objectPath}`;
   return {
     objects,
     isConfigured: () => true,
     ensureBucket: async ({ bucket }) => ({ bucket, created: false }),
     uploadObject: async ({ bucket, objectPath, buffer }) => {
-      objects.set(`${bucket}/${objectPath}`, Buffer.from(buffer));
+      objects.set(keyOf(bucket, objectPath), Buffer.from(buffer));
       return { objectPath };
     },
     downloadObject: async ({ bucket, objectPath }) => {
-      const stored = objects.get(`${bucket}/${objectPath}`);
+      const stored = objects.get(keyOf(bucket, objectPath));
       if (!stored) throw new Error(`Object not found: ${objectPath}`);
       return stored;
     },
     deleteObject: async ({ bucket, objectPath }) => {
-      objects.delete(`${bucket}/${objectPath}`);
+      objects.delete(keyOf(bucket, objectPath));
       return { objectPath };
     },
   };
@@ -259,6 +261,67 @@ describe('knowledge backup and restore', () => {
     const record = repositories.records.get(created.id);
     expect(existsSync(record.textPath)).toBe(true);
     expect(existsSync(record.vectorsPath)).toBe(true);
+  });
+
+  it('recovers a pre-backup file from its original in the assets bucket', async () => {
+    const storage = createFakeStorage();
+    const repositories = createFakeRepositories();
+
+    // A record from the old code: no backup, no local artifacts — only the
+    // original document, which the old upload stored in the assets bucket.
+    repositories.records.set('legacy-file', {
+      id: 'legacy-file',
+      chatbotId: 'bot-1',
+      ownerUid: 'owner-1',
+      name: 'faq.txt',
+      mimeType: 'text/plain',
+      backedUpAt: null,
+      directory: '/home/ubuntu/app/files/chatbots/bot-1/knowledge/legacy-file',
+      originalPath: '/home/ubuntu/app/x',
+      textPath: '/home/ubuntu/app/y',
+      manifestPath: '/home/ubuntu/app/z',
+      vectorsPath: '/home/ubuntu/app/w',
+    });
+    storage.objects.set(
+      'assets/chatbots/bot-1/files/legacy-file-faq.txt',
+      Buffer.from(
+        'We ship worldwide. Returns are accepted within 30 days.',
+        'utf8',
+      ),
+    );
+
+    const service = createService(baseDirectory, storage, repositories);
+    const outcome = await service.restoreMissingArtifacts();
+    expect(outcome).toEqual({
+      restored: 1,
+      backedUp: 0,
+      pending: 0,
+      failed: 0,
+    });
+
+    // Fully rebuilt locally, searchable, and now backed up for next time.
+    const record = repositories.records.get('legacy-file');
+    expect(existsSync(record.textPath)).toBe(true);
+    expect(existsSync(record.vectorsPath)).toBe(true);
+    expect(record.backedUpAt).toBeInstanceOf(Date);
+    expect(record.chunksCount).toBeGreaterThan(0);
+    expect(
+      storage.objects.has(
+        'chatbot-knowledge/chatbots/bot-1/knowledge/legacy-file/vectors.bin',
+      ),
+    ).toBe(true);
+
+    const results = await service.search('bot-1', 'returns policy');
+    expect(results.length).toBeGreaterThan(0);
+
+    // Second boot: nothing left to do.
+    const second = await service.restoreMissingArtifacts();
+    expect(second).toEqual({
+      restored: 0,
+      backedUp: 0,
+      pending: 0,
+      failed: 0,
+    });
   });
 
   it('marks files with no local copy and no backup as pending, not failed', async () => {

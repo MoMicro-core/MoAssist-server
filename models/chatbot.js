@@ -18,8 +18,8 @@ module.exports = {
         default: 'draft',
         enum: ['draft', 'published'],
       },
-      title: { type: String, default: 'MoMicro Assist Bot' },
-      botName: { type: String, default: 'MoMicro Assist' },
+      title: { type: String, default: 'MoMicro Bot' },
+      botName: { type: String, default: 'MoMicro' },
       initialMessage: {
         type: String,
         default: 'Hi. How can I help you today?',

@@ -45,9 +45,9 @@ module.exports = async (fastify) => {
   await fastify.register(swagger, {
     openapi: {
       info: {
-        title: 'MoMicro Assist API',
+        title: 'MoMicro API',
         version: '1.0.0',
-        description: 'MoMicro Assist swagger',
+        description: 'MoMicro swagger',
       },
     },
   });
