@@ -58,17 +58,15 @@ class AuthService {
 
     let stripeCustomerId = existing?.stripeCustomerId || '';
     if (!stripeCustomerId) {
-      stripeCustomerId = await this.billingService.ensureCustomer({
-        customerId: stripeCustomerId,
-        email: decoded.email,
-        uid: decoded.uid,
-      });
-    } else {
-      stripeCustomerId = await this.billingService.ensureCustomer({
-        customerId: stripeCustomerId,
-        email: decoded.email,
-        uid: decoded.uid,
-      });
+      try {
+        stripeCustomerId = await this.billingService.ensureCustomer({
+          customerId: stripeCustomerId,
+          email: decoded.email,
+          uid: decoded.uid,
+        });
+      } catch {
+        stripeCustomerId = '';
+      }
     }
 
     const nextUserPayload = {
