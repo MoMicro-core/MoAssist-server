@@ -98,10 +98,17 @@ const clientPlugin = async (fastify) => {
       return null;
     }
 
-    await fastify.mongodb.appSession.updateOne(
-      { token },
-      { $set: { expiresAt: addDays(new Date(), SESSION_TTL_DAYS) } },
-    );
+    // Sliding expiry, but only when it actually moves the needle. This used to
+    // write on every authenticated request; now it writes at most once a day per
+    // session, which is the same behaviour at a fraction of the cost.
+    const expiresAt = new Date(session.expiresAt).getTime();
+    const target = addDays(new Date(), SESSION_TTL_DAYS);
+    if (target.getTime() - expiresAt > 24 * 60 * 60 * 1000) {
+      await fastify.mongodb.appSession.updateOne(
+        { token },
+        { $set: { expiresAt: target } },
+      );
+    }
 
     return {
       token,

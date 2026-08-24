@@ -141,9 +141,14 @@ module.exports = ({ services, fastify }) => [
       );
       const baseUrl = getBaseUrl(request, fastify.config.environment.appUrl);
       reply.type('application/javascript');
-      // The launcher evolves (e.g. realtimeToken support); never let the
-      // browser serve a stale cached copy.
-      reply.header('Cache-Control', 'no-store');
+      // Every page view on every customer site hit the origin uncached. A short
+      // TTL with a long stale window keeps publishes near-instant while taking
+      // the request off the critical path for repeat visitors.
+      reply.header(
+        'Cache-Control',
+        'public, max-age=60, stale-while-revalidate=600',
+      );
+      reply.header('Vary', 'Origin');
       return services.embedService.renderScript({ chatbot, baseUrl });
     },
   },
@@ -171,7 +176,11 @@ module.exports = ({ services, fastify }) => [
       );
       const baseUrl = getBaseUrl(request, fastify.config.environment.appUrl);
       reply.type('text/html');
-      reply.header('Cache-Control', 'no-store');
+      reply.header(
+        'Cache-Control',
+        'public, max-age=60, stale-while-revalidate=600',
+      );
+      reply.header('Vary', 'Origin');
       return services.embedService.renderIframe({
         chatbot,
         baseUrl,

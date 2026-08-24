@@ -6,6 +6,11 @@ import type {
 } from '../../types';
 
 export const ACTIVE_PREMIUM_STATUSES: ReadonlySet<'active' | 'trialing'>;
+export const GRACE_PREMIUM_STATUSES: ReadonlySet<'past_due' | 'unpaid'>;
+export function isWithinGracePeriod(
+  status: string,
+  premiumCurrentPeriodEnd?: Date | string | null,
+): boolean;
 export const TIER_CAPABILITIES: Readonly<{
   AUTHENTICATED_WIDGET: 'authenticated_widget';
   AI_RESPONDER: 'ai_responder';

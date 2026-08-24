@@ -53,6 +53,15 @@ const mapConversation = (conversation) => ({
 
 const normalizeContent = (content) => String(content || '').trim();
 
+// Visitor messages are unauthenticated input that flows into the stored
+// document, the model prompt, and every subsequent turn of history. Cap it so a
+// single oversized message cannot inflate all three at once. Applied only to
+// message bodies — `normalizeContent` is also used for identifiers.
+const MAX_MESSAGE_LENGTH = 2000;
+
+const normalizeMessageContent = (content) =>
+  normalizeContent(content).slice(0, MAX_MESSAGE_LENGTH);
+
 const normalizeVisitorData = (visitor = {}) => {
   if (!visitor || typeof visitor !== 'object' || Array.isArray(visitor)) {
     return {};
@@ -123,7 +132,9 @@ class ConversationService {
     widgetSessionRepository,
     responderFactory,
     connectionManager,
+    log = () => null,
   }) {
+    this.log = log;
     this.chatbotService = chatbotService;
     this.chatbotRepository = chatbotRepository;
     this.conversationRepository = conversationRepository;
@@ -329,12 +340,14 @@ class ConversationService {
     return visitorData;
   }
 
-  async syncConversationStatuses() {
+  async syncConversationStatuses({ chatbotId = '' } = {}) {
     if (this.statusSyncPromise) return this.statusSyncPromise;
 
     this.statusSyncPromise = (async () => {
       const documents =
-        await this.conversationRepository.listLifecycleCandidates();
+        await this.conversationRepository.listLifecycleCandidates({
+          chatbotId,
+        });
       const chatbotCache = new Map();
 
       for (const document of documents) {
@@ -685,7 +698,7 @@ class ConversationService {
       throw new ForbiddenError('Chatbot is not accessible');
     }
 
-    await this.syncConversationStatuses();
+    await this.syncConversationStatuses({ chatbotId });
     const conversations =
       await this.conversationRepository.listByChatbot(chatbotId);
     return conversations.map(mapConversation);
@@ -701,7 +714,7 @@ class ConversationService {
     if (ownerUid && actor.role !== 'admin') {
       throw new ForbiddenError('ownerUid filter requires an admin');
     }
-    await this.syncConversationStatuses();
+    this.syncConversationStatuses().catch(() => null);
 
     const normalized = {};
     if (filters.status) normalized.status = filters.status;
@@ -734,7 +747,7 @@ class ConversationService {
   }
 
   async sendVisitorMessage({ widgetToken, authClient = '', content }) {
-    const normalizedContent = normalizeContent(content);
+    const normalizedContent = normalizeMessageContent(content);
     if (!normalizedContent) {
       throw new BadRequestError('Message content is required');
     }
@@ -847,7 +860,11 @@ class ConversationService {
           refreshed.chatbotId,
           aiMessage.id,
         );
-      } catch {
+      } catch (error) {
+        // A bare catch here meant every AI failure — a bad model name, a quota
+        // error, a rejected parameter — vanished, and the visitor just watched
+        // a reply that never arrived.
+        this.log(`ai reply failed for conversation ${document.id}`, error);
         if (aiMessage?.id) {
           this.publishMessageStreamFailed(
             document.id,
@@ -863,7 +880,7 @@ class ConversationService {
   }
 
   async sendOwnerMessage(actor, conversationId, content) {
-    const normalizedContent = normalizeContent(content);
+    const normalizedContent = normalizeMessageContent(content);
     if (!normalizedContent) {
       throw new BadRequestError('Message content is required');
     }

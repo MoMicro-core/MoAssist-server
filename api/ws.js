@@ -3,6 +3,12 @@
 const { UnauthorizedError } = require('../src/shared/application/errors');
 
 module.exports = ({ services, fastify }) => ({
+  // Keeps the connection warm through the edge's idle timeout (~100s) and lets
+  // the client detect a half-open socket instead of assuming it is healthy.
+  ping: {
+    access: ['public'],
+    handler: async () => ({ event: 'pong', payload: {} }),
+  },
   'user.authenticate': {
     access: ['public'],
     handler: async ({ connection, payload }) => {

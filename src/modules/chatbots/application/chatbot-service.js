@@ -320,10 +320,35 @@ const normalizeOrigin = (value = '') => {
   }
 };
 
+// `www.` is not a different site to an owner who typed the bare domain, and a
+// leading dot or `*.` prefix is how people write "and its subdomains".
+const stripWww = (hostname = '') => hostname.replace(/^www\./, '');
+
+const matchesDomain = (pattern = '', hostname = '') => {
+  const rule = String(pattern || '')
+    .trim()
+    .toLowerCase();
+  if (!rule) return false;
+
+  const wildcard = rule.startsWith('*.') || rule.startsWith('.');
+  const base = stripWww(normalizeOrigin(rule.replace(/^\*?\./, '')));
+  const host = stripWww(hostname);
+  if (!base) return false;
+
+  return wildcard ? host === base || host.endsWith(`.${base}`) : host === base;
+};
+
+// Fails closed: a request with neither Origin nor Referer cannot be matched
+// against the allowlist, so it is only permitted when the owner has opted into
+// "any domain". Previously an absent header returned true, which made the
+// allowlist trivially bypassable by any non-browser client.
 const isAllowedOrigin = (domains = ['*'], origin = '') => {
-  if (!origin || domains.includes('*')) return true;
-  const hostname = normalizeOrigin(origin);
-  return domains.some((domain) => normalizeOrigin(domain) === hostname);
+  const rules = Array.isArray(domains) && domains.length ? domains : ['*'];
+  if (rules.includes('*')) return true;
+  if (!origin) return false;
+  const hostname = stripWww(normalizeOrigin(origin));
+  if (!hostname) return false;
+  return rules.some((domain) => matchesDomain(domain, hostname));
 };
 
 class ChatbotService {

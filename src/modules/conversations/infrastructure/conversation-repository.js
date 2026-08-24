@@ -35,13 +35,29 @@ class ConversationRepository {
       .sort({ updatedAt: -1 });
   }
 
-  async listLifecycleCandidates() {
-    return this.model.find({
+  // Scoped and capped. This used to load every open conversation in the whole
+  // database — full documents, embedded message arrays and all — on a 60s timer
+  // and on every dashboard list request.
+  async listLifecycleCandidates({ chatbotId = '', limit = 500 } = {}) {
+    const query = {
       $or: [
         { status: { $in: ['open', 'active', 'pending'] } },
         { authClient: { $exists: true, $ne: '' } },
       ],
-    });
+    };
+    if (chatbotId) query.chatbotId = chatbotId;
+
+    return (
+      this.model
+        .find(query)
+        // The lifecycle rules only read status and a handful of timestamps, so
+        // the message arrays never need to leave the database.
+        .select(
+          'id chatbotId status authClient lastMessageAt lastVisitorMessageAt createdAt updatedAt',
+        )
+        .sort({ lastMessageAt: 1 })
+        .limit(limit)
+    );
   }
 
   async listByChatbot(chatbotId, filters = {}) {

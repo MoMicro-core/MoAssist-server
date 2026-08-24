@@ -26,3 +26,7 @@ export class ForbiddenError extends ApplicationError {
 export class NotFoundError extends ApplicationError {
   constructor(message?: string, details?: unknown);
 }
+
+export class TooManyRequestsError extends ApplicationError {
+  constructor(message?: string, details?: unknown);
+}

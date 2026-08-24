@@ -3,6 +3,20 @@
 const { ForbiddenError } = require('./errors');
 
 const ACTIVE_PREMIUM_STATUSES = new Set(['active', 'trialing']);
+
+// A card that expired is not a cancelled customer. Stripe's dunning usually
+// recovers the payment within days, so keep entitlement alive for a grace
+// window rather than breaking the widget on their storefront the same hour.
+const GRACE_PREMIUM_STATUSES = new Set(['past_due', 'unpaid']);
+const GRACE_PERIOD_DAYS = Number(process.env.BILLING_GRACE_DAYS || 7);
+
+const isWithinGracePeriod = (status, premiumCurrentPeriodEnd) => {
+  if (!GRACE_PREMIUM_STATUSES.has(status)) return false;
+  if (!premiumCurrentPeriodEnd) return true;
+  const endsAt = new Date(premiumCurrentPeriodEnd).getTime();
+  if (Number.isNaN(endsAt)) return true;
+  return Date.now() <= endsAt + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000;
+};
 const TIER_CAPABILITIES = Object.freeze({
   AUTHENTICATED_WIDGET: 'authenticated_widget',
   AI_RESPONDER: 'ai_responder',
@@ -185,7 +199,11 @@ class TierCatalog {
 
   resolveForState(value = {}) {
     const normalized = normalizePremiumState(value);
-    if (!ACTIVE_PREMIUM_STATUSES.has(normalized.premiumStatus)) {
+    const inGrace = isWithinGracePeriod(
+      normalized.premiumStatus,
+      normalized.premiumCurrentPeriodEnd,
+    );
+    if (!ACTIVE_PREMIUM_STATUSES.has(normalized.premiumStatus) && !inGrace) {
       return this.freePolicy;
     }
 
@@ -261,6 +279,8 @@ const hasPremiumAccess = (value = {}, tierCatalog = null) => {
 
 module.exports = {
   ACTIVE_PREMIUM_STATUSES,
+  GRACE_PREMIUM_STATUSES,
+  isWithinGracePeriod,
   TIER_CAPABILITIES,
   TierPolicy,
   CapabilityTierPolicy,

@@ -26,7 +26,10 @@ export class ConversationRepository {
     chatbotId: string,
     authClient: string,
   ): Promise<HydratedDocument<Conversation> | null>;
-  listLifecycleCandidates(): Promise<Array<HydratedDocument<Conversation>>>;
+  listLifecycleCandidates(options?: {
+    chatbotId?: string;
+    limit?: number;
+  }): Promise<Array<HydratedDocument<Conversation>>>;
   listByChatbot(
     chatbotId: string,
     filters?: Partial<Pick<Conversation, 'status'>>,

@@ -1,5 +1,64 @@
 'use strict';
 
+// The settings body used to be declared as `{ type: 'object' }`, which accepts
+// any key and any value and fed them straight into a recursive deep-merge. These
+// constraints are the boundary: colours must look like colours, strings have a
+// ceiling, and unknown keys are rejected rather than merged.
+const COLOR = {
+  type: 'string',
+  maxLength: 64,
+  pattern:
+    '^$|^(#[0-9a-fA-F]{3,8}|rgba?\\([^)]{1,60}\\)|hsla?\\([^)]{1,60}\\)|[a-zA-Z]{3,20})$',
+};
+
+const THEME_PROPERTIES = {
+  accentColor: COLOR,
+  backgroundColor: COLOR,
+  surfaceColor: COLOR,
+  launcherBackgroundColor: COLOR,
+  inputBackgroundColor: COLOR,
+  textColor: COLOR,
+  accentTextColor: COLOR,
+  borderColor: COLOR,
+  suggestionBackgroundColor: COLOR,
+  suggestionTextColor: COLOR,
+  suggestionBorderColor: COLOR,
+};
+
+const themeSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: THEME_PROPERTIES,
+};
+
+const settingsSchema = {
+  type: 'object',
+  properties: {
+    theme: {
+      type: 'object',
+      additionalProperties: false,
+      properties: { light: themeSchema, dark: themeSchema },
+    },
+    brand: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        logoUrl: { type: 'string', maxLength: 2048 },
+        bubbleIconUrl: { type: 'string', maxLength: 2048 },
+        logoBackgroundColor: COLOR,
+      },
+    },
+    title: { type: 'string', maxLength: 120 },
+    botName: { type: 'string', maxLength: 80 },
+    initialMessage: { type: 'string', maxLength: 1000 },
+    inputPlaceholder: { type: 'string', maxLength: 200 },
+    leadsFormTitle: { type: 'string', maxLength: 200 },
+    leadsFormDescription: { type: 'string', maxLength: 600 },
+    leadsFormSubmitLabel: { type: 'string', maxLength: 60 },
+    leadsFormSkipLabel: { type: 'string', maxLength: 60 },
+  },
+};
+
 const { getBaseUrl } = require('../../src/shared/application/url');
 const { BadRequestError } = require('../../src/shared/application/errors');
 
@@ -73,7 +132,7 @@ module.exports = ({ services, fastify }) => [
       body: {
         type: 'object',
         properties: {
-          settings: { type: 'object' },
+          settings: settingsSchema,
         },
       },
     },
@@ -114,7 +173,7 @@ module.exports = ({ services, fastify }) => [
       body: {
         type: 'object',
         properties: {
-          settings: { type: 'object' },
+          settings: settingsSchema,
         },
       },
     },
@@ -208,7 +267,7 @@ module.exports = ({ services, fastify }) => [
       body: {
         type: 'object',
         properties: {
-          settings: { type: 'object' },
+          settings: settingsSchema,
           mode: {
             type: 'string',
             enum: ['light', 'dark'],

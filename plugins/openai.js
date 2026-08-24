@@ -4,9 +4,15 @@ const fp = require('fastify-plugin');
 const OpenAI = require('openai');
 const { UnauthorizedError } = require('../src/shared/application/errors');
 
+// Snake-case is the wire format the API expects; isolated here so the rest of
+// the gateway stays in the project's camelCase style.
+const MAX_TOKENS_PARAM = 'max_completion_tokens';
+const maxTokenParam = (value) => (value ? { [MAX_TOKENS_PARAM]: value } : {});
+
 class OpenAIGateway {
-  constructor(config) {
+  constructor(config, log = () => null) {
     this.config = config;
+    this.log = log;
     this.client = config.enabled ? new OpenAI({ apiKey: config.key }) : null;
   }
 
@@ -16,12 +22,13 @@ class OpenAIGateway {
     }
   }
 
-  async createChatCompletion({ messages, temperature = 0.2 }) {
+  async createChatCompletion({ messages, temperature = 0.2, maxTokens }) {
     this.assertConfigured();
     const response = await this.client.chat.completions.create({
       model: this.config.chat.model,
       messages,
       temperature,
+      ...maxTokenParam(maxTokens),
     });
     return response.choices[0]?.message?.content?.trim() || '';
   }
@@ -29,6 +36,7 @@ class OpenAIGateway {
   async streamChatCompletion({
     messages,
     temperature = 0.2,
+    maxTokens,
     onTextDelta = async () => null,
   }) {
     this.assertConfigured();
@@ -38,6 +46,7 @@ class OpenAIGateway {
         model: this.config.chat.model,
         messages,
         temperature,
+        ...maxTokenParam(maxTokens),
         stream: true,
       });
 
@@ -53,10 +62,15 @@ class OpenAIGateway {
 
       await forwarder.flush();
       return content.trim();
-    } catch {
+    } catch (streamError) {
+      this.log(
+        'streaming completion failed, retrying without stream',
+        streamError,
+      );
       const content = await this.createChatCompletion({
         messages,
         temperature,
+        maxTokens,
       });
       const forwarder = createWordDeltaForwarder(onTextDelta);
       await forwarder.push(content);
@@ -136,7 +150,12 @@ function createWordDeltaForwarder(onTextDelta) {
 }
 
 const openaiPlugin = async (fastify) => {
-  fastify.decorate('openai', new OpenAIGateway(fastify.config.openai));
+  fastify.decorate(
+    'openai',
+    new OpenAIGateway(fastify.config.openai, (message, error) =>
+      fastify.log.error({ err: error }, `[openai] ${message}`),
+    ),
+  );
 };
 
 module.exports = fp(openaiPlugin, {

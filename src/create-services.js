@@ -129,6 +129,12 @@ const createServices = async (fastify) => {
     fastify.mongodb.knowledgeFile,
   );
   const tierCatalog = createTierCatalog(fastify.config.billing || {});
+  // Shared structured logger for the services that previously swallowed
+  // failures silently.
+  const log = (message, error) =>
+    error
+      ? fastify.log.error({ err: error }, message)
+      : fastify.log.warn(message);
 
   const billingService = new BillingService({
     userRepository,
@@ -137,6 +143,7 @@ const createServices = async (fastify) => {
     stripeGateway: fastify.stripe,
     config: fastify.config,
     tierCatalog,
+    log,
   });
 
   const authService = new AuthService({
@@ -204,9 +211,11 @@ const createServices = async (fastify) => {
     knowledgeService,
     tierCatalog,
     realtimeService,
+    log,
   });
 
   const conversationService = new ConversationService({
+    log,
     chatbotService,
     chatbotRepository,
     conversationRepository,

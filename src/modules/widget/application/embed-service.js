@@ -3,7 +3,80 @@
 const { toWebsocketUrl } = require('../../../shared/application/url');
 
 const escapeScript = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
+
+// Chatbot settings are owner-controlled free text. Everything that reaches the
+// iframe template must go through one of these three, matched to the context it
+// lands in: escapeHtml for element text, escapeAttr for quoted attributes, and
+// safeColor for anything interpolated into a <style> block.
+const HTML_ESCAPES = new Map([
+  ['&', '&amp;'],
+  ['<', '&lt;'],
+  ['>', '&gt;'],
+  ['"', '&quot;'],
+  [String.fromCharCode(39), '&#39;'],
+]);
+
+const escapeHtml = (value = '') =>
+  String(value === null || value === undefined ? '' : value).replace(
+    /[&<>"']/g,
+    (char) => HTML_ESCAPES.get(char),
+  );
+
+// Attributes are always emitted double-quoted, so this is escapeHtml; kept as a
+// separate name so the call site documents which context it is protecting.
+const escapeAttr = escapeHtml;
+
+// A URL destined for src/href. Rejects anything that is not http(s) or a data
+// image, so `javascript:` and attribute-breakout payloads cannot survive.
+const safeUrl = (value = '') => {
+  const raw = String(value === null || value === undefined ? '' : value).trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw) || /^data:image\//i.test(raw)) {
+    return escapeAttr(raw);
+  }
+  return '';
+};
+
 const DEFAULT_COLOR_FALLBACK = 'rgba(15, 23, 42, 0.12)';
+
+// Only shapes that cannot terminate a CSS declaration or a <style> element.
+const COLOR_PATTERN =
+  /^(#[0-9a-f]{3,8}|rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(?:,\s*[\d.]+\s*)?\)|hsla?\(\s*[\d.]+(?:deg)?\s*,\s*[\d.]+%\s*,\s*[\d.]+%\s*(?:,\s*[\d.]+\s*)?\)|[a-z]{3,20})$/i;
+
+const safeColor = (value = '', fallback = 'transparent') => {
+  const raw = String(value === null || value === undefined ? '' : value).trim();
+  if (!raw || !COLOR_PATTERN.test(raw)) return fallback;
+  return raw;
+};
+
+// Sanitize the whole theme once, at the point it is read, so every downstream
+// `${theme.someColor}` interpolation is safe by construction rather than by
+// each call site remembering. An empty value stays empty because several
+// templates rely on `||` falling through to another token.
+const sanitizeTheme = (theme = {}) => {
+  const source = theme && typeof theme === 'object' ? theme : {};
+  return Object.fromEntries(
+    Object.entries(source).map(([key, value]) => {
+      if (!/color$/i.test(key)) return [key, value];
+      const raw = String(
+        value === null || value === undefined ? '' : value,
+      ).trim();
+      return [key, raw ? safeColor(raw, 'transparent') : ''];
+    }),
+  );
+};
+
+const sanitizeBrand = (brand = {}) => {
+  const source = brand && typeof brand === 'object' ? brand : {};
+  return {
+    ...source,
+    logoUrl: safeUrl(source.logoUrl),
+    bubbleIconUrl: safeUrl(source.bubbleIconUrl),
+    logoBackgroundColor: source.logoBackgroundColor
+      ? safeColor(source.logoBackgroundColor, '')
+      : '',
+  };
+};
 
 const withAlpha = (
   value = '',
@@ -111,7 +184,7 @@ class EmbedService {
     const alignItems = isLeft ? 'flex-start' : 'flex-end';
     const transformOrigin = `${isTop ? 'top' : 'bottom'} ${isLeft ? 'left' : 'right'}`;
     const closedTranslateY = isTop ? '-18px' : '18px';
-    const lightTheme = chatbot.settings.theme.light;
+    const lightTheme = sanitizeTheme(chatbot.settings.theme.light);
     const launcherBackground =
       lightTheme.launcherBackgroundColor || lightTheme.accentColor;
     const surface = lightTheme.surfaceColor;
@@ -131,9 +204,14 @@ class EmbedService {
       0.18,
       'rgba(15, 23, 42, 0.22)',
     )}`;
-    const launcherIcon = chatBubbleIcon(
-      lightTheme.accentTextColor || '#ffffff',
-    );
+    // Honour the owner's custom bubble icon; fall back to the built-in glyph.
+    // The launcher previously always used the built-in one, so custom branding
+    // applied inside the panel but never to the button people actually see.
+    const launcherBrand = sanitizeBrand(chatbot.settings.brand);
+    const launcherIcon =
+      launcherBrand.bubbleIconUrl ||
+      launcherBrand.logoUrl ||
+      chatBubbleIcon(lightTheme.accentTextColor || '#ffffff');
 
     return `
 (function () {
@@ -186,6 +264,65 @@ class EmbedService {
   button.style.display = 'flex';
   button.style.alignItems = 'center';
   button.style.justifyContent = 'center';
+  var prefersReducedMotion =
+    window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!prefersReducedMotion) {
+    button.style.transition =
+      'transform 180ms ease-out, box-shadow 180ms ease-out';
+    button.addEventListener('mouseenter', function () {
+      button.style.transform = 'translateY(-2px)';
+    });
+    button.addEventListener('mouseleave', function () {
+      button.style.transform = 'none';
+    });
+    button.addEventListener('mousedown', function () {
+      button.style.transform = 'scale(.94)';
+    });
+    button.addEventListener('mouseup', function () {
+      button.style.transform = 'translateY(-2px)';
+    });
+  }
+  // Unread count, shown only while the panel is closed. Without it a human
+  // reply that arrives on a collapsed widget is invisible until the visitor
+  // happens to reopen it.
+  var unread = document.createElement('span');
+  unread.setAttribute('aria-hidden', 'true');
+  unread.style.position = 'absolute';
+  unread.style.top = '-4px';
+  unread.style.right = '-4px';
+  unread.style.minWidth = '20px';
+  unread.style.height = '20px';
+  unread.style.borderRadius = '999px';
+  unread.style.background = '#e5484d';
+  unread.style.color = '#fff';
+  unread.style.fontSize = '11px';
+  unread.style.fontWeight = '600';
+  unread.style.lineHeight = '20px';
+  unread.style.textAlign = 'center';
+  unread.style.padding = '0 5px';
+  unread.style.boxShadow = '0 2px 6px rgba(0,0,0,.25)';
+  unread.style.transform = 'scale(0)';
+  unread.style.display = 'none';
+  if (!prefersReducedMotion) {
+    unread.style.transition = 'transform 340ms cubic-bezier(.34,1.56,.64,1)';
+  }
+  button.style.position = 'relative';
+  var unreadCount = 0;
+  var setUnread = function (count) {
+    unreadCount = Math.max(0, count || 0);
+    if (!unreadCount) {
+      unread.style.transform = 'scale(0)';
+      unread.style.display = 'none';
+      return;
+    }
+    unread.textContent = unreadCount > 9 ? '9+' : String(unreadCount);
+    unread.style.display = 'block';
+    // Next frame, so the transition has a start value to animate from.
+    window.requestAnimationFrame(function () {
+      unread.style.transform = 'scale(1)';
+    });
+  };
   var icon = document.createElement('img');
   icon.src = ${escapeScript(launcherIcon)};
   icon.alt = '';
@@ -194,28 +331,39 @@ class EmbedService {
   icon.style.height = '24px';
   icon.style.objectFit = 'contain';
   button.appendChild(icon);
+  button.appendChild(unread);
   var panel = document.createElement('div');
   panel.style.width = '420px';
   panel.style.maxWidth = 'calc(100vw - 18px)';
-  panel.style.maxHeight = '0px';
+  panel.style.height = '0px';
   panel.style.overflow = 'hidden';
   panel.style.opacity = '0';
+  panel.style.willChange = 'transform, opacity';
   panel.style.transform = ${escapeScript(
     `translateY(${closedTranslateY}) scale(0.98)`,
   )};
   panel.style.transformOrigin = ${escapeScript(transformOrigin)};
   panel.style.pointerEvents = 'none';
-  panel.style.transition =
-    'max-height 240ms ease, opacity 180ms ease, transform 240ms ease';
+  panel.style.transition = prefersReducedMotion
+    ? 'none'
+    : 'opacity 200ms ease, transform 320ms cubic-bezier(.32,.72,0,1)';
   panel.style.borderRadius = ${escapeScript(panelRadius)};
   panel.style.border = '0';
   panel.style.background = 'transparent';
   panel.style.boxShadow = ${escapeScript(panelShadow)};
   panel.style.zIndex = '99999';
   var iframe = document.createElement('iframe');
-  iframe.src = iframeSrc;
   iframe.title = ${escapeScript(chatbot.settings.botName)};
   iframe.loading = 'lazy';
+  // The src is assigned on first intent (hover/click) or when the browser goes
+  // idle, whichever comes first. A lazy loading hint does not help here: the
+  // wrapper is position:fixed and therefore always "in viewport".
+  var iframeLoaded = false;
+  var loadIframe = function () {
+    if (iframeLoaded) return;
+    iframeLoaded = true;
+    iframe.src = iframeSrc;
+  };
   iframe.style.width = '420px';
   iframe.style.maxWidth = 'calc(100vw - 32px)';
   iframe.style.height = '680px';
@@ -238,7 +386,11 @@ class EmbedService {
   };
   var setOpen = function (next) {
     isOpen = !!next;
+    if (isOpen) setUnread(0);
     button.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    // Height is toggled outright so the closed panel takes no space and cannot
+    // intercept clicks; only transform and opacity are animated.
+    panel.style.height = isOpen ? 'auto' : '0px';
     panel.style.maxHeight = isOpen ? 'calc(100vh - 92px)' : '0px';
     panel.style.opacity = isOpen ? '1' : '0';
     panel.style.transform = isOpen
@@ -253,7 +405,10 @@ class EmbedService {
   iframe.addEventListener('load', function () {
     notifyIframe(isOpen ? 'open' : 'hide');
   });
+  button.addEventListener('mouseenter', loadIframe);
+  button.addEventListener('focus', loadIframe);
   button.addEventListener('click', function () {
+    loadIframe();
     setOpen(!isOpen);
   });
   window.addEventListener('message', function (event) {
@@ -264,6 +419,10 @@ class EmbedService {
       setOpen(false);
       return;
     }
+    if (data.action === 'unread') {
+      if (!isOpen) setUnread(data.count);
+      return;
+    }
     if (data.action === 'open') {
       setOpen(true);
     }
@@ -271,7 +430,28 @@ class EmbedService {
   panel.appendChild(iframe);
   wrapper.appendChild(button);
   wrapper.appendChild(panel);
-  document.body.appendChild(wrapper);
+
+  var mount = function () {
+    if (!document.body) return;
+    document.body.appendChild(wrapper);
+    // Warm the iframe once the page is done with its own work, so opening is
+    // instant without competing for bandwidth during load.
+    var warm = function () {
+      if (window.requestIdleCallback) {
+        window.requestIdleCallback(loadIframe, { timeout: 4000 });
+      } else {
+        window.setTimeout(loadIframe, 2500);
+      }
+    };
+    if (document.readyState === 'complete') warm();
+    else window.addEventListener('load', warm, { once: true });
+  };
+
+  if (document.body) {
+    mount();
+  } else {
+    document.addEventListener('DOMContentLoaded', mount, { once: true });
+  }
 
   // SPA hook: report a login/logout without a page reload. Pass the signed-in
   // customer's token, or an empty value on logout.
@@ -293,8 +473,9 @@ class EmbedService {
 
   renderIframe({ chatbot, baseUrl, preview = null }) {
     const websocketUrl = `${toWebsocketUrl(baseUrl)}/ws`;
-    const lightTheme = chatbot.settings.theme.light;
-    const darkTheme = chatbot.settings.theme.dark;
+    const lightTheme = sanitizeTheme(chatbot.settings.theme.light);
+    const darkTheme = sanitizeTheme(chatbot.settings.theme.dark);
+    const brand = sanitizeBrand(chatbot.settings.brand);
     // Optional per-mode overrides for suggestion chips. Only emitted when the
     // owner set a value, so blank falls back to the theme (via the var() default
     // in the .suggestion-chip rule).
@@ -334,14 +515,22 @@ class EmbedService {
     const radiusLg = `${Math.max(0, baseRadius - 6)}px`;
     const radiusMd = `${Math.max(0, baseRadius - 12)}px`;
     const radiusSm = `${Math.max(0, baseRadius - 14)}px`;
-    const brandIconUrl =
-      chatbot.settings.brand.logoUrl || chatbot.settings.brand.bubbleIconUrl;
+    const brandIconUrl = brand.logoUrl || brand.bubbleIconUrl;
     const launcherIcon = chatBubbleIcon(
       lightTheme.accentTextColor || '#ffffff',
     );
     const closeSvg = closeIcon(lightTheme.accentTextColor || '#111111');
+    // Hand the client the sanitized settings, not the raw ones, so any future
+    // consumer of runtime.chatbot inherits the same guarantees as the template.
     const payload = {
-      chatbot,
+      chatbot: {
+        ...chatbot,
+        settings: {
+          ...chatbot.settings,
+          brand,
+          theme: { light: lightTheme, dark: darkTheme },
+        },
+      },
       apiBaseUrl: baseUrl,
       websocketUrl,
     };
@@ -355,11 +544,11 @@ class EmbedService {
     }
 
     return `<!DOCTYPE html>
-<html lang="${chatbot.settings.defaultLanguage || 'english'}">
+<html lang="${escapeAttr(chatbot.settings.defaultLanguage || 'english')}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${chatbot.settings.title || chatbot.settings.botName}</title>
+  <title>${escapeHtml(chatbot.settings.title || chatbot.settings.botName)}</title>
   <style>
     :root {
       color-scheme: light dark;
@@ -401,7 +590,7 @@ class EmbedService {
         lightTheme.borderColor,
       )};
       ${suggestionVars(lightTheme)}
-      --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || lightTheme.surfaceColor};
+      --logo-bg: ${brand.logoBackgroundColor || lightTheme.surfaceColor};
       --input-bg: ${lightTheme.inputBackgroundColor || lightTheme.surfaceColor};
       --radius-xl: ${radiusXl};
       --radius-lg: ${radiusLg};
@@ -417,6 +606,7 @@ class EmbedService {
     body {
       margin: 0;
       min-height: 100vh;
+      min-height: 100dvh;
       background:
         radial-gradient(circle at top, var(--accent-glow), transparent 36%),
         radial-gradient(circle at bottom right, var(--accent-fog), transparent 28%),
@@ -429,6 +619,7 @@ class EmbedService {
     }
     .shell {
       height: 100vh;
+      height: 100dvh;
       display: grid;
       grid-template-rows: auto 1fr auto;
       background: var(--surface);
@@ -478,7 +669,7 @@ class EmbedService {
         lightTheme.borderColor,
       )};
       ${suggestionVars(lightTheme)}
-      --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || lightTheme.surfaceColor};
+      --logo-bg: ${brand.logoBackgroundColor || lightTheme.surfaceColor};
       --launcher-bg: ${lightTheme.launcherBackgroundColor || lightTheme.accentColor};
       --input-bg: ${lightTheme.inputBackgroundColor || lightTheme.surfaceColor};
       --shadow: 0 28px 64px ${withAlpha(
@@ -525,7 +716,7 @@ class EmbedService {
         darkTheme.borderColor,
       )};
       ${suggestionVars(darkTheme)}
-      --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || darkTheme.surfaceColor};
+      --logo-bg: ${brand.logoBackgroundColor || darkTheme.surfaceColor};
       --launcher-bg: ${darkTheme.launcherBackgroundColor || darkTheme.accentColor};
       --input-bg: ${darkTheme.inputBackgroundColor || darkTheme.surfaceColor};
       --shadow: 0 28px 64px ${withAlpha(
@@ -743,7 +934,6 @@ class EmbedService {
       background: currentColor;
       opacity: 0.45;
       vertical-align: -0.12em;
-      animation: momicro-widget-caret 0.9s steps(1, end) infinite;
     }
     .message.visitor {
       align-self: flex-end;
@@ -1005,7 +1195,7 @@ class EmbedService {
           darkTheme.borderColor,
         )};
         ${suggestionVars(darkTheme)}
-        --logo-bg: ${chatbot.settings.brand.logoBackgroundColor || darkTheme.surfaceColor};
+        --logo-bg: ${brand.logoBackgroundColor || darkTheme.surfaceColor};
         --input-bg: ${darkTheme.inputBackgroundColor || darkTheme.surfaceColor};
         --shadow: 0 28px 64px ${withAlpha(
           darkTheme.accentColor,
@@ -1019,6 +1209,122 @@ class EmbedService {
         background: rgba(255, 255, 255, 0.08);
       }
     }
+    /* --- motion system -------------------------------------------------- */
+    /* Every animation below is compositor-only (transform/opacity) and lives
+       behind no-preference, so reduced-motion is the default rather than an
+       opt-out we might forget. */
+    .connection-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      font-size: 12px;
+      color: var(--text-soft);
+      background: var(--accent-fog);
+      border-top: 1px solid var(--border-soft);
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    .connection-bar.is-visible { opacity: 1; transform: none; }
+    .connection-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+    .jump-latest {
+      position: absolute;
+      left: 50%;
+      bottom: 96px;
+      transform: translateX(-50%) translateY(6px);
+      z-index: 5;
+      border: 1px solid var(--border-soft);
+      background: var(--surface);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 7px 14px;
+      font: inherit;
+      font-size: 12.5px;
+      cursor: pointer;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+      opacity: 0;
+      pointer-events: none;
+    }
+    .jump-latest.is-visible {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(-50%) translateY(0);
+    }
+    .message-content a {
+      color: inherit;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .message.message-error {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      border-left: 3px solid var(--accent);
+    }
+    .message-retry {
+      border: 1px solid var(--border-soft);
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      font-size: 12.5px;
+      border-radius: var(--radius-sm);
+      padding: 5px 11px;
+      cursor: pointer;
+    }
+    .typing-dots {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      height: 12px;
+    }
+    .typing-dots i {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.4;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .connection-bar {
+        transition: opacity 240ms ease, transform 240ms ease;
+      }
+      .jump-latest {
+        transition: opacity 200ms ease, transform 200ms cubic-bezier(.22,1,.36,1);
+      }
+      .message-enter {
+        animation: momicro-message-in 220ms cubic-bezier(.22, 1, .36, 1) both;
+      }
+      .message-retry {
+        transition: background 160ms ease, border-color 160ms ease;
+      }
+      .message-retry:hover { background: var(--accent-soft); }
+      .typing-dots i {
+        animation: momicro-typing 1.2s ease-in-out infinite;
+      }
+      .typing-dots i:nth-child(2) { animation-delay: .16s; }
+      .typing-dots i:nth-child(3) { animation-delay: .32s; }
+      .message.streaming .message-content::after {
+        animation: momicro-widget-caret 0.9s steps(1, end) infinite;
+      }
+    }
+    @keyframes momicro-message-in {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: none; }
+    }
+    @keyframes momicro-typing {
+      0%, 60%, 100% { opacity: .32; transform: translateY(0); }
+      30%           { opacity: .9;  transform: translateY(-3px); }
+    }
+    @media (max-width: 520px) {
+      .jump-latest { bottom: 108px; }
+    }
     @keyframes momicro-widget-caret {
       0%, 50% {
         opacity: 0.45;
@@ -1031,34 +1337,38 @@ class EmbedService {
 </head>
 <body${previewEnabled ? ` class="preview preview-${previewMode}"` : ''}>
   ${previewEnabled ? `<div class="preview-stage ${widgetLocation}">` : ''}
-  <button id="standaloneLauncher" class="standalone-launcher" type="button" hidden data-preview-part="launcher" aria-label="${chatbot.settings.botName}">
+  <button id="standaloneLauncher" class="standalone-launcher" type="button" hidden data-preview-part="launcher" aria-label="${escapeAttr(chatbot.settings.botName)}">
     <span class="standalone-icon">
       <img src="${launcherIcon}" alt="" aria-hidden="true" />
     </span>
   </button>
-  <div id="shell" class="shell">
+  <div id="shell" class="shell" role="dialog" aria-modal="false" aria-label="${escapeAttr(chatbot.settings.title || chatbot.settings.botName)}">
     <header class="header" data-preview-part="header">
       <div class="header-row">
         <div class="brand-lockup">
           <div class="brand-mark">
             ${
               brandIconUrl
-                ? `<img src="${brandIconUrl}" alt="${chatbot.settings.botName} logo" />`
+                ? `<img src="${brandIconUrl}" alt="${escapeAttr(chatbot.settings.botName)} logo" />`
                 : chatbot.settings.botName.slice(0, 1).toUpperCase()
             }
           </div>
           <div class="brand-copy">
-            <h1 id="previewBotName" class="title"${previewEnabled ? ' data-preview-editable="true" data-preview-field="botName" contenteditable="plaintext-only"' : ''}>${chatbot.settings.botName}</h1>
+            <h1 id="previewBotName" class="title"${previewEnabled ? ' data-preview-editable="true" data-preview-field="botName" contenteditable="plaintext-only"' : ''}>${escapeHtml(chatbot.settings.botName)}</h1>
           </div>
         </div>
         <button id="hideChat" class="icon-button" type="button" aria-label="Hide chat"><img src="${closeSvg}" alt="" aria-hidden="true" /></button>
       </div>
+      <div id="connectionBar" class="connection-bar" role="status" aria-live="polite" hidden>
+        <span class="connection-dot"></span><span id="connectionText">Reconnecting…</span>
+      </div>
     </header>
-    <main id="messages" class="messages" data-preview-part="canvas"></main>
+    <main id="messages" class="messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Conversation" data-preview-part="canvas"></main>
+    <button id="jumpLatest" class="jump-latest" type="button" hidden>New messages &darr;</button>
     <footer id="composer" class="composer" data-preview-part="composer">
       <div id="suggestions" class="suggestions" data-preview-part="suggestions"></div>
       <div class="row">
-        <textarea id="input" rows="1" placeholder="${chatbot.settings.inputPlaceholder}"></textarea>
+        <textarea id="input" rows="1" placeholder="${escapeAttr(chatbot.settings.inputPlaceholder)}"></textarea>
         <button id="send" class="send" type="button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M14.76 12H6.832m0 0c0-.275-.057-.55-.17-.808L4.285 5.814c-.76-1.72 1.058-3.442 2.734-2.591L20.8 10.217c1.46.74 1.46 2.826 0 3.566L7.02 20.777c-1.677.851-3.495-.872-2.735-2.591l2.375-5.378A2 2 0 0 0 6.83 12"/></svg></button>
       </div>
       <div class="composer-meta">
@@ -1069,13 +1379,13 @@ class EmbedService {
   ${previewEnabled ? '</div>' : ''}
   <div id="overlay" class="overlay">
     <div class="card" data-preview-part="leadForm">
-      <button id="closeLead" type="button" aria-label="${chatbot.settings.leadsFormSkipLabel}" title="${chatbot.settings.leadsFormSkipLabel}" style="position:absolute;top:10px;right:12px;border:0;background:transparent;font-size:24px;line-height:1;cursor:pointer;color:inherit;opacity:.55;padding:2px 6px;display:none">&times;</button>
-      <h2>${chatbot.settings.leadsFormTitle}</h2>
-      <p>${chatbot.settings.leadsFormDescription}</p>
+      <button id="closeLead" type="button" aria-label="${escapeAttr(chatbot.settings.leadsFormSkipLabel)}" title="${escapeAttr(chatbot.settings.leadsFormSkipLabel)}" style="position:absolute;top:10px;right:12px;border:0;background:transparent;font-size:24px;line-height:1;cursor:pointer;color:inherit;opacity:.55;padding:2px 6px;display:none">&times;</button>
+      <h2>${escapeHtml(chatbot.settings.leadsFormTitle)}</h2>
+      <p>${escapeHtml(chatbot.settings.leadsFormDescription)}</p>
       <form id="leadForm"></form>
       <div class="actions">
-        <button id="cancelLead" type="button" class="ghost">${chatbot.settings.leadsFormSkipLabel}</button>
-        <button id="submitLead" type="button" class="primary">${chatbot.settings.leadsFormSubmitLabel}</button>
+        <button id="cancelLead" type="button" class="ghost">${escapeHtml(chatbot.settings.leadsFormSkipLabel)}</button>
+        <button id="submitLead" type="button" class="primary">${escapeHtml(chatbot.settings.leadsFormSubmitLabel)}</button>
       </div>
     </div>
   </div>
@@ -1115,8 +1425,41 @@ class EmbedService {
       const inputHeight = Number.isInteger(requestedInputHeight)
         ? requestedInputHeight
         : configuredInputHeight;
+      const shell = document.getElementById('shell');
+      const connectionBar = document.getElementById('connectionBar');
+      const connectionText = document.getElementById('connectionText');
+      const jumpLatest = document.getElementById('jumpLatest');
       let socket = null;
-      let widgetToken = localStorage.getItem(storageKey) || '';
+      // Safari ITP and Firefox TCP partition storage in cross-site iframes, and
+      // in the strictest cases block it outright. Fall back to an in-memory
+      // store for the life of the page rather than letting the chat fail.
+      const memoryStore = {};
+      const safeStorage = {
+        get: function (key) {
+          try {
+            return localStorage.getItem(key) || memoryStore[key] || '';
+          } catch (error) {
+            return memoryStore[key] || '';
+          }
+        },
+        set: function (key, value) {
+          memoryStore[key] = value;
+          try {
+            localStorage.setItem(key, value);
+          } catch (error) {
+            // Partitioned or disabled; the in-memory copy above still works.
+          }
+        },
+        remove: function (key) {
+          delete memoryStore[key];
+          try {
+            localStorage.removeItem(key);
+          } catch (error) {
+            // Nothing to do.
+          }
+        }
+      };
+      let widgetToken = safeStorage.get(storageKey);
       let queuedMessage = '';
       let currentConversation = null;
       const messageNodes = new Map();
@@ -1236,6 +1579,7 @@ class EmbedService {
       };
 
       const setWidgetHidden = (hidden) => {
+        if (!hidden) clearUnread();
         document.body.classList.toggle('widget-hidden', Boolean(hidden));
         standaloneLauncher.hidden = !hidden;
         if (!hidden && !previewEnabled) {
@@ -1262,13 +1606,151 @@ class EmbedService {
         syncParentVisibility('hide');
       };
 
-      const scrollMessagesToBottom = () => {
-        messages.scrollTop = messages.scrollHeight;
+      // Unread tracking for the collapsed launcher. Counted only while the panel
+      // is hidden, and cleared the moment it is shown again.
+      let unreadForVisitor = 0;
+      const publishUnread = () => {
+        if (!isEmbedded()) return;
+        window.parent.postMessage(
+          {
+            type: 'momicro-assist',
+            action: 'unread',
+            chatbotId: runtime.chatbot.id,
+            count: unreadForVisitor,
+          },
+          '*',
+        );
       };
+
+      const noteIncomingMessage = () => {
+        if (!document.body.classList.contains('widget-hidden')) return;
+        unreadForVisitor += 1;
+        publishUnread();
+      };
+
+      const clearUnread = () => {
+        if (!unreadForVisitor) return;
+        unreadForVisitor = 0;
+        publishUnread();
+      };
+
+      const prefersReducedMotion = () =>
+        window.matchMedia &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      // --- connection + error surface --------------------------------------
+      const setConnectionState = (state) => {
+        if (!connectionBar) return;
+        if (state === 'online') {
+          connectionBar.hidden = true;
+          connectionBar.classList.remove('is-visible');
+          return;
+        }
+        if (connectionText) {
+          connectionText.textContent =
+            state === 'offline' ? 'Offline' : 'Reconnecting…';
+        }
+        connectionBar.hidden = false;
+        connectionBar.classList.add('is-visible');
+      };
+
+      let inlineErrorNode = null;
+      const showInlineError = (text) => {
+        if (inlineErrorNode && inlineErrorNode.parentNode) {
+          inlineErrorNode.remove();
+        }
+        const wasPinned =
+          messages.scrollHeight - messages.scrollTop - messages.clientHeight < 48;
+        inlineErrorNode = document.createElement('div');
+        inlineErrorNode.className = 'message system message-error message-enter';
+        inlineErrorNode.setAttribute('role', 'alert');
+
+        const copy = document.createElement('div');
+        copy.className = 'message-content';
+        copy.textContent = text;
+        inlineErrorNode.appendChild(copy);
+
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'message-retry';
+        retry.textContent = 'Try again';
+        retry.addEventListener('click', () => {
+          inlineErrorNode?.remove();
+          inlineErrorNode = null;
+          connectSocket();
+        });
+        inlineErrorNode.appendChild(retry);
+
+        messages.appendChild(inlineErrorNode);
+        if (wasPinned) messages.scrollTop = messages.scrollHeight;
+      };
+
+      // --- typing indicator -------------------------------------------------
+      // Shown the moment a message is sent, so the gap between send and the
+      // model's first token is never a static screen. It is the same node the
+      // reply lands in, so the bubble never jumps.
+      let typingNode = null;
+      const showTypingIndicator = () => {
+        if (typingNode) return;
+        const wasPinned =
+          messages.scrollHeight - messages.scrollTop - messages.clientHeight < 48;
+        typingNode = document.createElement('div');
+        typingNode.className = 'message assistant typing-bubble message-enter';
+        typingNode.setAttribute('aria-label', 'Assistant is typing');
+        typingNode.innerHTML =
+          '<span class="typing-dots"><i></i><i></i><i></i></span>';
+        messages.appendChild(typingNode);
+        if (wasPinned) messages.scrollTop = messages.scrollHeight;
+      };
+
+      const hideTypingIndicator = () => {
+        if (!typingNode) return;
+        typingNode.remove();
+        typingNode = null;
+      };
+
+      // --- scrolling --------------------------------------------------------
+      // Stick to the bottom only while the visitor is already there. Reading an
+      // earlier message must not be interrupted by an incoming reply.
+      const STICK_THRESHOLD_PX = 48;
+
+      const isPinnedToBottom = () =>
+        messages.scrollHeight - messages.scrollTop - messages.clientHeight <
+        STICK_THRESHOLD_PX;
+
+      const setJumpVisible = (visible) => {
+        if (!jumpLatest) return;
+        jumpLatest.hidden = !visible;
+        jumpLatest.classList.toggle('is-visible', Boolean(visible));
+      };
+
+      const scrollMessagesToBottom = (smooth) => {
+        if (smooth && !prefersReducedMotion()) {
+          messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
+        } else {
+          messages.scrollTop = messages.scrollHeight;
+        }
+        setJumpVisible(false);
+      };
+
+      // Callers decide whether to follow BEFORE they mutate the DOM, so we never
+      // read layout in the same frame we wrote to it.
+      const followIfPinned = (wasPinned) => {
+        if (wasPinned) scrollMessagesToBottom(false);
+        else setJumpVisible(true);
+      };
+
+      messages.addEventListener('scroll', () => {
+        if (isPinnedToBottom()) setJumpVisible(false);
+      });
+
+      if (jumpLatest) {
+        jumpLatest.addEventListener('click', () => scrollMessagesToBottom(true));
+      }
 
       const clearStreamStates = () => {
         streamStates.forEach((state) => {
-          if (state.timer) window.clearTimeout(state.timer);
+          if (state.raf) window.cancelAnimationFrame(state.raf);
         });
         streamStates.clear();
       };
@@ -1358,10 +1840,46 @@ class EmbedService {
         scrollMessagesToBottom();
       };
 
+      // Build real anchor nodes from matched URL ranges. Deliberately DOM
+      // construction rather than innerHTML: a support assistant needs to hand
+      // over clickable links without reopening an injection surface.
+      const URL_PATTERN = /\\b((?:https?:\\/\\/|www\\.)[^\\s<>()"']+[^\\s<>()"'.,;:!?])/gi;
+
+      const renderRichText = (target, text) => {
+        target.textContent = '';
+        const value = String(text || '');
+        let cursor = 0;
+        let match;
+        URL_PATTERN.lastIndex = 0;
+
+        while ((match = URL_PATTERN.exec(value)) !== null) {
+          if (match.index > cursor) {
+            target.appendChild(
+              document.createTextNode(value.slice(cursor, match.index)),
+            );
+          }
+          const raw = match[0];
+          const href = /^www\\./i.test(raw) ? 'https://' + raw : raw;
+          const link = document.createElement('a');
+          link.href = href;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer nofollow';
+          link.textContent = raw;
+          target.appendChild(link);
+          cursor = match.index + raw.length;
+        }
+
+        if (cursor < value.length) {
+          target.appendChild(document.createTextNode(value.slice(cursor)));
+        }
+      };
+
       const createMessageNode = (message, options = {}) => {
+        const wasPinned = isPinnedToBottom();
         const node = document.createElement('div');
         node.className = 'message ' + (message.authorType || 'system');
         node.classList.toggle('streaming', Boolean(options.streaming));
+        if (!options.skipEnter) node.classList.add('message-enter');
         node.setAttribute(
           'data-preview-part',
           message.authorType === 'visitor' ? 'visitorBubble' : 'assistantBubble',
@@ -1369,7 +1887,18 @@ class EmbedService {
 
         const contentNode = document.createElement('div');
         contentNode.className = 'message-content';
-        contentNode.textContent = message.content || '';
+
+        // While streaming we append into a bare text node so each chunk is an
+        // O(1) append instead of rewriting the whole message. Links are resolved
+        // once the message settles.
+        let tailNode = null;
+        if (options.streaming) {
+          tailNode = document.createTextNode(message.content || '');
+          contentNode.appendChild(tailNode);
+        } else {
+          renderRichText(contentNode, message.content || '');
+        }
+
         if (previewEnabled && message.id === 'preview-assistant-1') {
           contentNode.setAttribute('contenteditable', 'plaintext-only');
           contentNode.setAttribute('data-preview-field', 'initialMessage');
@@ -1384,13 +1913,17 @@ class EmbedService {
           messageNodes.set(message.id, {
             node,
             contentNode,
+            tailNode,
           });
         }
-        scrollMessagesToBottom();
+
+        if (options.keepScroll) followIfPinned(wasPinned);
+        else scrollMessagesToBottom(false);
 
         return {
           node,
           contentNode,
+          tailNode,
         };
       };
 
@@ -1404,10 +1937,28 @@ class EmbedService {
           return createMessageNode(message, options);
         }
 
-        existing.node.className = 'message ' + (message.authorType || 'system');
-        existing.node.classList.toggle('streaming', Boolean(options.streaming));
-        existing.contentNode.textContent = message.content || '';
-        scrollMessagesToBottom();
+        const wasPinned = isPinnedToBottom();
+        const streaming = Boolean(options.streaming);
+
+        // Toggle only what changed. Reassigning className here used to wipe every
+        // other class on the node — including the entrance animation — on each
+        // streamed chunk.
+        existing.node.classList.toggle('streaming', streaming);
+
+        if (streaming) {
+          if (!existing.tailNode) {
+            existing.contentNode.textContent = '';
+            existing.tailNode = document.createTextNode('');
+            existing.contentNode.appendChild(existing.tailNode);
+          }
+          existing.tailNode.data = message.content || '';
+        } else {
+          existing.tailNode = null;
+          renderRichText(existing.contentNode, message.content || '');
+        }
+
+        if (options.keepScroll) followIfPinned(wasPinned);
+        else scrollMessagesToBottom(false);
         return existing;
       };
 
@@ -1418,14 +1969,29 @@ class EmbedService {
         });
       };
 
-      const settleStreamState = (messageId) => {
-        const state = streamStates.get(messageId);
-        if (!state) return;
-        if (state.timer || state.queue.length) return;
+      // --- streaming --------------------------------------------------------
+      // One requestAnimationFrame loop per streaming message. It drains
+      // characters (not words) at a rate derived from how far behind the display
+      // is, so it speeds up when the model outruns it and coasts when the model
+      // pauses — instead of the fixed 28ms-per-word timer, which was too slow for
+      // a fast model and stuttered on a slow one.
+      const STREAM_CHARS_MIN = 1;
+      const STREAM_CHARS_MAX = 28;
+      const STREAM_TARGET_FRAMES = 16; // catch up in roughly 260ms
+
+      const releaseStreamState = (messageId, state) => {
+        if (state.raf) window.cancelAnimationFrame(state.raf);
+        state.raf = null;
 
         const record = messageNodes.get(messageId);
         if (record) {
           record.node.classList.remove('streaming');
+          // Re-render once, now that the text is final, so URLs become links.
+          const settled = findConversationMessage(messageId);
+          if (settled && !state.failed) {
+            record.tailNode = null;
+            renderRichText(record.contentNode, settled.content || '');
+          }
         }
 
         if (state.failed && !findConversationMessage(messageId)?.content) {
@@ -1434,41 +2000,87 @@ class EmbedService {
           removeConversationMessage(messageId);
         }
 
-        if (state.completed || state.failed) {
-          streamStates.delete(messageId);
-        }
+        streamStates.delete(messageId);
       };
 
-      const flushStreamQueue = (messageId) => {
+      // Only ever called once the stream is genuinely finished. An empty buffer
+      // mid-stream is a pause, not an ending — treating it as one is what made
+      // the caret flicker off every time the model hesitated.
+      const settleStreamState = (messageId) => {
+        const state = streamStates.get(messageId);
+        if (!state) return;
+        if (!state.completed && !state.failed) return;
+        if (state.shown < state.buffer.length) return;
+        releaseStreamState(messageId, state);
+      };
+
+      const streamTick = (messageId) => {
         const state = streamStates.get(messageId);
         if (!state) return;
 
-        if (!state.queue.length) {
-          state.timer = null;
-          settleStreamState(messageId);
-          return;
-        }
-
-        const nextChunk = state.queue.shift();
         const message = findConversationMessage(messageId);
         if (!message) {
-          state.queue = [];
-          state.timer = null;
-          streamStates.delete(messageId);
+          releaseStreamState(messageId, state);
           return;
         }
 
-        message.content = (message.content || '') + nextChunk;
-        syncMessageNode(message, {
-          streaming: true,
-        });
+        const remaining = state.buffer.length - state.shown;
 
-        state.timer = window.setTimeout(() => {
-          flushStreamQueue(messageId);
-        }, 28);
+        if (!remaining) {
+          if (state.completed || state.failed) {
+            settleStreamState(messageId);
+            return;
+          }
+          // Idle between chunks — keep the loop alive so the next chunk starts
+          // rendering on the very next frame instead of after a fresh delay.
+          state.raf = window.requestAnimationFrame(() => streamTick(messageId));
+          return;
+        }
+
+        const rate = Math.min(
+          STREAM_CHARS_MAX,
+          Math.max(STREAM_CHARS_MIN, Math.ceil(remaining / STREAM_TARGET_FRAMES)),
+        );
+
+        // Decide whether to follow before touching the DOM, so the append and
+        // the scroll write happen without a layout read between them.
+        const wasPinned = isPinnedToBottom();
+
+        const nextShown = Math.min(state.buffer.length, state.shown + rate);
+        const appended = state.buffer.slice(state.shown, nextShown);
+        state.shown = nextShown;
+        message.content = state.buffer.slice(0, state.shown);
+
+        // Append to the tail text node rather than rewriting the whole message.
+        const record = messageNodes.get(messageId);
+        if (record && record.tailNode) {
+          record.tailNode.appendData(appended);
+        } else {
+          syncMessageNode(message, { streaming: true, keepScroll: true });
+        }
+
+        followIfPinned(wasPinned);
+
+        state.raf = window.requestAnimationFrame(() => streamTick(messageId));
+      };
+
+      const ensureStreamState = (messageId) => {
+        let state = streamStates.get(messageId);
+        if (!state) {
+          state = {
+            buffer: '',
+            shown: 0,
+            raf: null,
+            completed: false,
+            failed: false,
+          };
+          streamStates.set(messageId, state);
+        }
+        return state;
       };
 
       const startStreamingMessage = (message) => {
+        hideTypingIndicator();
         const entry = upsertConversationMessage({
           ...message,
           content: message.content || '',
@@ -1476,30 +2088,26 @@ class EmbedService {
         syncMessageNode(entry, {
           streaming: true,
         });
+        const state = ensureStreamState(message.id);
+        state.buffer = entry.content || '';
+        state.shown = state.buffer.length;
+        if (!state.raf) {
+          state.raf = window.requestAnimationFrame(() => streamTick(message.id));
+        }
       };
 
       const queueStreamingChunk = (messageId, chunk) => {
-        let state = streamStates.get(messageId);
-        if (!state) {
-          state = {
-            queue: [],
-            timer: null,
-            completed: false,
-            failed: false,
-          };
-          streamStates.set(messageId, state);
-        }
-
-        state.queue.push(chunk);
-        if (!state.timer) {
-          state.timer = window.setTimeout(() => {
-            flushStreamQueue(messageId);
-          }, 28);
+        hideTypingIndicator();
+        const state = ensureStreamState(messageId);
+        state.buffer += chunk;
+        if (!state.raf) {
+          state.raf = window.requestAnimationFrame(() => streamTick(messageId));
         }
       };
 
       const completeStreamingMessage = (messageId) => {
         const state = streamStates.get(messageId);
+        hideTypingIndicator();
         if (!state) {
           const record = messageNodes.get(messageId);
           if (record) record.node.classList.remove('streaming');
@@ -1511,19 +2119,9 @@ class EmbedService {
       };
 
       const failStreamingMessage = (messageId) => {
-        let state = streamStates.get(messageId);
-        if (!state) {
-          state = {
-            queue: [],
-            timer: null,
-            completed: false,
-            failed: true,
-          };
-          streamStates.set(messageId, state);
-        } else {
-          state.failed = true;
-        }
-
+        hideTypingIndicator();
+        const state = ensureStreamState(messageId);
+        state.failed = true;
         settleStreamState(messageId);
       };
 
@@ -1542,6 +2140,17 @@ class EmbedService {
         applyConversationState(conversation);
       };
 
+      // The composer is a one-row textarea that never grew, so a multi-sentence
+      // message was typed through a single visible line.
+      const MAX_INPUT_ROWS_PX = 132;
+      const autoGrowInput = () => {
+        input.style.height = 'auto';
+        const next = Math.min(input.scrollHeight, MAX_INPUT_ROWS_PX);
+        input.style.height = next + 'px';
+        input.style.overflowY =
+          input.scrollHeight > MAX_INPUT_ROWS_PX ? 'auto' : 'hidden';
+      };
+
       const applyComposerState = (disabled, placeholder) => {
         input.disabled = disabled;
         send.disabled = disabled;
@@ -1555,7 +2164,7 @@ class EmbedService {
 
         if (status === 'closed') {
           applyComposerState(true, 'This chat is closed');
-          localStorage.removeItem(storageKey);
+          safeStorage.remove(storageKey);
           return;
         }
 
@@ -1609,9 +2218,65 @@ class EmbedService {
         return;
       }
 
+      // Visitors must never see a raw server string. Map what we know to plain
+      // language and keep the detail in the console for support.
+      const FRIENDLY_ERRORS = {
+        conversation_closed: 'This conversation has ended. Send a message to start a new one.',
+        rate_limited: 'You are sending messages a little too quickly. One moment.',
+        unauthorized: 'This chat session expired. Reloading the page will start a new one.'
+      };
+
       const handleSocketError = async (packet) => {
-        const message = packet?.payload?.message || 'Widget request failed';
-        alert(message);
+        var code = (packet && packet.payload && packet.payload.code) || '';
+        var detail = (packet && packet.payload && packet.payload.message) || '';
+        if (window.console && console.warn) {
+          console.warn('[momicro] ' + (code || 'error') + ': ' + detail);
+        }
+        showInlineError(FRIENDLY_ERRORS[code] || 'Something went wrong. Please try again.');
+      };
+
+      // --- transport resilience -------------------------------------------
+      // The socket is expected to drop: laptops sleep, networks change, and the
+      // edge closes idle connections after ~100s. Reconnect with backoff, keep
+      // the connection warm with a ping, and re-render the conversation on every
+      // successful reconnect so anything sent while we were away shows up.
+      var reconnectAttempt = 0;
+      var reconnectTimer = null;
+      var heartbeatTimer = null;
+      var manuallyClosed = false;
+      var HEARTBEAT_MS = 30000;
+
+      const clearHeartbeat = () => {
+        if (heartbeatTimer) {
+          window.clearInterval(heartbeatTimer);
+          heartbeatTimer = null;
+        }
+      };
+
+      const startHeartbeat = () => {
+        clearHeartbeat();
+        heartbeatTimer = window.setInterval(() => {
+          if (!socket || socket.readyState !== WebSocket.OPEN) return;
+          try {
+            socket.send(JSON.stringify({ action: 'ping', payload: {} }));
+          } catch (error) {
+            // A failed send means the socket is already gone; let close handle it.
+          }
+        }, HEARTBEAT_MS);
+      };
+
+      const scheduleReconnect = () => {
+        if (manuallyClosed || !widgetToken || reconnectTimer) return;
+        // 1s, 2s, 4s ... capped at 30s, with jitter so many widgets recovering
+        // from the same outage do not stampede the server together.
+        var base = Math.min(30000, 1000 * Math.pow(2, reconnectAttempt));
+        var delay = base * (0.7 + Math.random() * 0.6);
+        reconnectAttempt += 1;
+        setConnectionState('reconnecting');
+        reconnectTimer = window.setTimeout(() => {
+          reconnectTimer = null;
+          connectSocket();
+        }, delay);
       };
 
       const connectSocket = () => {
@@ -1620,8 +2285,12 @@ class EmbedService {
           return;
         }
 
+        manuallyClosed = false;
         socket = new WebSocket(runtime.websocketUrl);
         socket.addEventListener('open', () => {
+          reconnectAttempt = 0;
+          setConnectionState('online');
+          startHeartbeat();
           socket.send(JSON.stringify({
             action: 'widget.authenticate',
             payload: {
@@ -1633,7 +2302,15 @@ class EmbedService {
           }));
         });
         socket.addEventListener('message', async (event) => {
-          const packet = JSON.parse(event.data);
+          let packet;
+          try {
+            packet = JSON.parse(event.data);
+          } catch (error) {
+            // A frame we cannot parse is not worth tearing the handler down for.
+            return;
+          }
+          if (!packet || typeof packet !== 'object') return;
+          if (packet.event === 'pong') return;
 
           if (packet.event === 'authenticated') {
             renderConversation(packet.payload.conversation);
@@ -1655,6 +2332,8 @@ class EmbedService {
           if (message.authorType === 'visitor') {
             humanPromptDismissed = true;
             renderHumanPrompt();
+          } else {
+            noteIncomingMessage();
           }
           completeStreamingMessage(message.id);
           if (message.authorType !== 'visitor') queueVisitorRead();
@@ -1713,6 +2392,12 @@ class EmbedService {
         });
         socket.addEventListener('close', () => {
           socket = null;
+          clearHeartbeat();
+          scheduleReconnect();
+        });
+        socket.addEventListener('error', () => {
+          // close always follows error; reconnect is scheduled there.
+          setConnectionState('reconnecting');
         });
       };
 
@@ -1778,7 +2463,7 @@ class EmbedService {
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.message || 'Failed to create session');
         widgetToken = payload.token;
-        localStorage.setItem(storageKey, widgetToken);
+        safeStorage.set(storageKey, widgetToken);
         overlay.style.display = 'none';
         connectSocket();
         return payload;
@@ -1790,6 +2475,10 @@ class EmbedService {
           payload: { content: text }
         }));
         input.value = '';
+        autoGrowInput();
+        // Immediate, local feedback. The gap before the first token covers
+        // retrieval and model start-up, and must never be a static screen.
+        showTypingIndicator();
       };
 
       const hideSuggestions = () => {
@@ -1829,7 +2518,8 @@ class EmbedService {
             try {
               await createSession();
             } catch (error) {
-              alert(error.message);
+              showInlineError('We could not start the chat. Please try again.');
+              if (window.console && console.warn) console.warn('[momicro] session', error);
             }
             return;
           }
@@ -1861,11 +2551,38 @@ class EmbedService {
           dispatchMessage();
         }
       });
+      input.addEventListener('input', autoGrowInput);
+      autoGrowInput();
+
+      // Escape closes the panel from anywhere inside it, and focus is kept in
+      // the dialog while it is open.
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !document.body.classList.contains('widget-hidden')) {
+          event.preventDefault();
+          requestHideWidget();
+          return;
+        }
+        if (event.key !== 'Tab') return;
+        const focusables = shell.querySelectorAll(
+          'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), a[href]'
+        );
+        if (!focusables.length) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      });
       submitLead.addEventListener('click', async () => {
         try {
           await createSession();
         } catch (error) {
-          alert(error.message);
+          showInlineError('We could not start the chat. Please try again.');
+              if (window.console && console.warn) console.warn('[momicro] session', error);
         }
       });
       cancelLead.addEventListener('click', async () => {
@@ -1875,7 +2592,8 @@ class EmbedService {
           try {
             await createSession();
           } catch (error) {
-            alert(error.message);
+            showInlineError('We could not start the chat. Please try again.');
+              if (window.console && console.warn) console.warn('[momicro] session', error);
           }
           return;
         }
@@ -1896,7 +2614,8 @@ class EmbedService {
             try {
               await createSession();
             } catch (error) {
-              alert(error.message);
+              showInlineError('We could not start the chat. Please try again.');
+              if (window.console && console.warn) console.warn('[momicro] session', error);
             }
           });
         }

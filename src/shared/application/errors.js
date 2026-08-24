@@ -34,10 +34,17 @@ class NotFoundError extends ApplicationError {
   }
 }
 
+class TooManyRequestsError extends ApplicationError {
+  constructor(message = 'Too many requests', details) {
+    super(message, 429, 'rate_limited', details);
+  }
+}
+
 module.exports = {
   ApplicationError,
   BadRequestError,
   UnauthorizedError,
   ForbiddenError,
   NotFoundError,
+  TooManyRequestsError,
 };

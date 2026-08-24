@@ -522,10 +522,12 @@ export interface OpenAIGateway {
   createChatCompletion(args: {
     messages: ChatMessage[];
     temperature?: number;
+    maxTokens?: number;
   }): Promise<string>;
   streamChatCompletion(args: {
     messages: ChatMessage[];
     temperature?: number;
+    maxTokens?: number;
     onTextDelta?: (chunk: string) => Promise<void> | void;
   }): Promise<string>;
   createEmbedding(input: string): Promise<number[]>;

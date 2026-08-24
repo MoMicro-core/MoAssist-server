@@ -23,6 +23,7 @@ class BillingService {
     stripeGateway,
     config,
     tierCatalog,
+    log = () => null,
   }) {
     this.userRepository = userRepository;
     this.chatbotRepository = chatbotRepository;
@@ -30,6 +31,30 @@ class BillingService {
     this.stripeGateway = stripeGateway;
     this.config = config;
     this.tierCatalog = tierCatalog;
+    this.log = log;
+    // Bounded in-process replay guard. Stripe retries within minutes, so a
+    // small recent-id window covers the realistic duplicate case without a new
+    // collection. The staleness check below is the durable backstop.
+    this.processedEvents = new Set();
+    this.processedEventOrder = [];
+  }
+
+  rememberEvent(eventId) {
+    if (!eventId || this.processedEvents.has(eventId)) return;
+    this.processedEvents.add(eventId);
+    this.processedEventOrder.push(eventId);
+    if (this.processedEventOrder.length > 500) {
+      this.processedEvents.delete(this.processedEventOrder.shift());
+    }
+  }
+
+  // A webhook we cannot apply may mean a customer paid and got nothing, so it
+  // must never disappear silently the way it used to.
+  ignoreWebhook(event, reason) {
+    this.log(
+      `stripe webhook ignored (${reason}) for event ${event?.id || 'unknown'}`,
+    );
+    return { received: true, ignored: true, reason };
   }
 
   async ensureCustomer({ customerId, email, uid }) {
@@ -179,6 +204,14 @@ class BillingService {
       return { received: true, ignored: true };
     }
 
+    // Stripe retries on failure and does not guarantee ordering, so a delayed
+    // `deleted` retry could land after a successful resubscription and revoke a
+    // paying customer. Drop anything we have already applied, or that is older
+    // than the state we already hold.
+    if (this.processedEvents.has(event.id)) {
+      return { received: true, ignored: true, reason: 'duplicate_event' };
+    }
+
     const subscription = event.data.object;
     const customerId = subscription.customer;
     const metadataUserUid = subscription.metadata?.uid || '';
@@ -189,18 +222,33 @@ class BillingService {
       await this.userRepository.findByStripeCustomerId(customerId);
     const user = userByMetadata || userByCustomer;
 
-    if (!user) return { received: true, ignored: true };
+    if (!user) return this.ignoreWebhook(event, 'user_not_found');
 
     const metadataChatbotId = subscription.metadata?.chatbotId || '';
     const existing = await this.subscriptionRepository.findById(
       subscription.id,
     );
     const chatbotId = metadataChatbotId || existing?.chatbotId || '';
-    if (!chatbotId) return { received: true, ignored: true };
+    if (!chatbotId) return this.ignoreWebhook(event, 'chatbot_id_missing');
 
     const chatbot = await this.chatbotRepository.findById(chatbotId);
     if (!chatbot || chatbot.ownerUid !== user.uid) {
-      return { received: true, ignored: true };
+      return this.ignoreWebhook(
+        event,
+        chatbot ? 'owner_mismatch' : 'chatbot_not_found',
+      );
+    }
+
+    const existingUpdatedAt = existing?.stripeUpdatedAt
+      ? new Date(existing.stripeUpdatedAt).getTime()
+      : 0;
+    const eventCreatedAt = Number(event.created || 0) * 1000;
+    if (
+      eventCreatedAt &&
+      existingUpdatedAt &&
+      eventCreatedAt < existingUpdatedAt
+    ) {
+      return this.ignoreWebhook(event, 'stale_event');
     }
 
     await this.subscriptionRepository.upsertFromStripe(
@@ -209,6 +257,7 @@ class BillingService {
       subscription,
     );
     await this.syncPremiumState(chatbotId, chatbot);
+    this.rememberEvent(event.id);
 
     return { received: true };
   }
@@ -320,7 +369,9 @@ class BillingService {
       );
     }
 
-    const baseUrl = 'https://momicro.com';
+    // Was hardcoded to production, so a staging or local checkout returned the
+    // visitor to the live site.
+    const baseUrl = this.config?.environment?.appUrl || 'https://momicro.com';
     const encodedChatbotId = encodeURIComponent(chatbot.id);
     const successUrl =
       payload.successUrl ||
